@@ -15,8 +15,10 @@ modules/syncthing.nix     # Syncthing (ネイティブ)
 modules/cloudflared.nix   # Cloudflare Tunnel (misskey 公開)
 modules/misskey.nix       # misskey の compose スタック (podman)
 modules/magic-packet-bridge.nix  # WoL 中継 (systemd)
+modules/discord-bot.nix   # Web デプロイ BOT (systemd)
 modules/secrets.nix       # sops-nix (age) の設定
 pkgs/magic-packet-bridge/ # WoL 中継アプリ (上流ソースを取り込み)
+pkgs/discord-bot/         # Discord BOT 本体 (index.js + discord.js)
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # カーネルモジュール等 (nixos-generate-config --no-filesystems の出力を反映)
 hosts/minis/disk.nix      # disko によるディスク構成
@@ -261,6 +263,25 @@ VM で sops の binary 秘密が復号されて `/run/secrets/misskey_default_ym
 
 VM で確認済み (2026-10-25): サービス active、10840 を listen、
 `POST / {"mac":"FFFFFFFFFFFF"}` が「送信に成功しました」を返す。
+
+## Discord デプロイ BOT (modules/discord-bot.nix)
+
+tomarigi_hp_svelte の Web デプロイ BOT。旧環境は devcontainer 風イメージ + compose。
+
+- BOT 本体 (`index.js` + discord.js 14.13.0) は `pkgs/discord-bot/` に取り込み、
+  `buildNpmPackage` でビルドする。
+- 対象リポジトリのチェックアウト (`~/ci/tomarigi_hp_svelte`) を作業ディレクトリにして
+  `pnpm --filter web <command>` を実行する。チェックアウトと node_modules は stateful。
+- PATH に nodejs_22 / pnpm / php83 / composer / rsync / openssh / git / imagemagick などを渡す
+  (旧イメージに同梱していたツール一式)。
+- BOT_TOKEN は sops (`secrets/minis/discord-bot.yaml`) から
+  `/run/secrets/rendered/discord-bot.env` を生成して `EnvironmentFile` で渡す。
+- ログは `<repo>/logs` と `<repo>/packages/discord-bot/logs`。旧 clean-logs コンテナの代わりに
+  systemd-tmpfiles で 30 日より古いファイルを削除。
+- デプロイ用の SSH 鍵は halby の `~/.ssh` を使う（deploy.sh はホスト実行時そのユーザーの鍵を使う設計）。
+
+VM で確認済み (2026-10-25): サービスが起動し、ダミートークンで `TokenInvalid` になるところまで
+（パッケージ・env ファイル・作業ディレクトリの配線確認）。Discord 接続と実デプロイは実機デプロイ後。
 
 ## ディスク構成 (disko)
 

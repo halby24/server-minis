@@ -16,6 +16,7 @@
     ./cloudflared.nix
     ./misskey.nix
     ./magic-packet-bridge.nix
+    ./discord-bot.nix
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";

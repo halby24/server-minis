@@ -17,8 +17,11 @@
   outputs =
     { nixpkgs, sops-nix, disko, ... }:
     {
-      packages.x86_64-linux.magic-packet-bridge =
-        nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/magic-packet-bridge { };
+      packages.x86_64-linux = {
+        magic-packet-bridge =
+          nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/magic-packet-bridge { };
+        discord-bot = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/discord-bot { };
+      };
 
       nixosConfigurations = {
         # 実機: AZW MINI S / Intel N100 / x86_64

@@ -1,0 +1,11 @@
+{
+  "name": "discord-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "discord.js": "14.13.0"
+  }
+}

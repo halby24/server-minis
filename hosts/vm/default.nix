@@ -42,6 +42,10 @@
   sops.secrets.misskey_default_yml.sopsFile = lib.mkForce ../../secrets/vm/misskey-default.yml;
   systemd.services.misskey.wantedBy = lib.mkForce [ ];
 
+  # discord-bot はダミートークン + 作業ディレクトリだけ差し替え (起動自体は確認する)
+  sops.secrets.discord_bot_token.sopsFile = lib.mkForce ../../secrets/vm/discord-bot.yaml;
+  systemd.services.discord-bot.serviceConfig.WorkingDirectory = lib.mkForce "/tmp";
+
   virtualisation.vmVariant = {
     virtualisation = {
       memorySize = 4096;
