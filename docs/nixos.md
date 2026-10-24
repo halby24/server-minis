@@ -13,6 +13,7 @@ modules/cockpit.nix       # Cockpit + cockpit-podman (コンテナ管理 UI)
 modules/samba.nix         # Samba の共有とパスワード投入
 modules/syncthing.nix     # Syncthing (ネイティブ)
 modules/cloudflared.nix   # Cloudflare Tunnel (misskey 公開)
+modules/misskey.nix       # misskey の compose スタック (podman)
 modules/secrets.nix       # sops-nix (age) の設定
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # カーネルモジュール等 (nixos-generate-config --no-filesystems の出力を反映)
@@ -87,7 +88,7 @@ nix build .#nixosConfigurations.minis-vm.config.system.build.vm
 
 ## サーバー基本設定 (modules/server.nix)
 
-- **firewall**: 有効化。残すサービスのポートを明示許可 (22, 3002, 8384, 10840)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp、Cockpit は `services.cockpit.openFirewall` で 9090/tcp、Syncthing は `openDefaultPorts` で 22000/tcp・udp と 21027/udp を開く。`tailscale0` と `podman0`/`podman1` は trusted。
+- **firewall**: 有効化。残すサービスのポートを明示許可 (22, 8384, 10840)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp、Cockpit は `services.cockpit.openFirewall` で 9090/tcp、Syncthing は `openDefaultPorts` で 22000/tcp・udp と 21027/udp を開く。`tailscale0` と `podman0`/`podman1` は trusted。misskey の 3002 は 127.0.0.1 バインドなので開放しない。
 - **移行対象外**: tgt (iSCSI, 3260) / gitea (8000, 2226) / openclaw (18789-18790) / vsftpd (21, 廃止) / portainer (9000, Cockpit に置換)。理由は `modules/server.nix` 冒頭に記載。
 - **残すもの**: misskey (3002), syncthing (8384, 22000), magic_packet_bridge (10840, 使用中), samba, cockpit。
 - **tailscale**: `services.tailscale.enable` のみ。認証 (`tailscale up`) は手動で行う。
@@ -215,6 +216,36 @@ misskey の公開経路。既存のダッシュボード管理トンネルをそ
 
 VM で確認済み (2026-10-24): unit が起動し、ダミートークンを読んで
 「Provided Tunnel token is not valid」で失敗するところまで（配線の確認）。実接続はデプロイ後。
+
+## Misskey (modules/misskey.nix)
+
+旧環境では手運用の docker compose だったものを、compose ファイルを Nix から生成して
+systemd (oneshot) から podman ソケット経由で起動する構成にした。
+
+- compose は `/etc/misskey/compose.yml` に生成。`systemd.services.misskey` が
+  `docker-compose up -d` / `down` を実行する。
+- イメージ: `misskey/misskey:2025.4.0`（旧環境はローカルビルド。DB のバージョンに合わせて固定）、
+  `postgres:15-alpine`、`redis:7-alpine`、`elasticsearch-oss:6.4.2`。
+- データ: `/mnt/data_ssd/misskey/{db,files,redis,elasticsearch}`。
+  `db` と `files` は既存。`redis` / `elasticsearch` は新規（旧環境では `~/servers/misskey` 配下、
+  redis 5.7M / ES 24K だったのでキャッシュとして作り直す）。
+- 設定 `default.yml` は **ファイル全体を sops の binary 秘密**として持つ
+  (`secrets/minis/misskey-default.yml` → `/run/secrets/misskey_default_yml`)。コンテナには read-only でマウント。
+- 3002 は `127.0.0.1:3002` にバインドし、cloudflared からのみ到達させる（firewall では開放しない）。
+- バージョンアップ（2025.4.0 → 最新）は DB マイグレーションを伴うので別作業。
+
+binary 秘密の編集:
+
+```sh
+sops --decrypt --input-type binary --output-type binary secrets/minis/misskey-default.yml > /tmp/default.yml
+$EDITOR /tmp/default.yml
+sops --encrypt --input-type binary --output-type binary \
+  --filename-override secrets/minis/misskey-default.yml /tmp/default.yml > secrets/minis/misskey-default.yml
+```
+
+確認済み (2026-10-25): 生成した compose が `docker compose config` を通る（web/db/redis/es）、
+VM で sops の binary 秘密が復号されて `/run/secrets/misskey_default_yml` に展開される。
+スタック自体はデータディスク前提なので VM では起動していない（実機デプロイ後に確認）。
 
 ## ディスク構成 (disko)
 

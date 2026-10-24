@@ -7,12 +7,12 @@ keys:
   - &vm age1ef88xxcpe0lmyaavxzr8rj8j8sw6xmp4wm4m2gkyt30clt5htsysyyatyy
 
 creation_rules:
-  - path_regex: secrets/minis/.*\.yaml$
+  - path_regex: secrets/minis/.*\.ya?ml$
     key_groups:
       - age:
           - *minis
           - *halby
-  - path_regex: secrets/vm/.*\.yaml$
+  - path_regex: secrets/vm/.*\.ya?ml$
     key_groups:
       - age:
           - *vm

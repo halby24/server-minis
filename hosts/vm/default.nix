@@ -38,6 +38,10 @@
   sops.secrets.cloudflared_token.sopsFile = lib.mkForce ../../secrets/vm/cloudflared.yaml;
   systemd.services.cloudflared-misskey.wantedBy = lib.mkForce [ ];
 
+  # misskey はデータディスク前提なので VM では起動しない (評価のみ)
+  sops.secrets.misskey_default_yml.sopsFile = lib.mkForce ../../secrets/vm/misskey-default.yml;
+  systemd.services.misskey.wantedBy = lib.mkForce [ ];
+
   virtualisation.vmVariant = {
     virtualisation = {
       memorySize = 4096;

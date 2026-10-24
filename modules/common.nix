@@ -14,6 +14,7 @@
     ./cockpit.nix
     ./syncthing.nix
     ./cloudflared.nix
+    ./misskey.nix
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";

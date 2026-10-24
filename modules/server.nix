@@ -18,11 +18,11 @@
     enable = true;
     allowedTCPPorts = [
       22 # ssh
-      3002 # misskey
       8384 # syncthing (web UI)
       10840 # magic_packet_bridge (使用中)
     ];
     allowedUDPPorts = [ ];
+    # misskey (3002) は 127.0.0.1 バインドで cloudflared からのみ届けばよい
     # 22000/tcp・udp と 21027/udp は services.syncthing.openDefaultPorts が開ける
     # tailnet と podman のネットワークは素通し
     trustedInterfaces = [
