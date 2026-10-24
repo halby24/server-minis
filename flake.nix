@@ -17,6 +17,9 @@
   outputs =
     { nixpkgs, sops-nix, disko, ... }:
     {
+      packages.x86_64-linux.magic-packet-bridge =
+        nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/magic-packet-bridge { };
+
       nixosConfigurations = {
         # 実機: AZW MINI S / Intel N100 / x86_64
         minis = nixpkgs.lib.nixosSystem {

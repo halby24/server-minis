@@ -14,7 +14,9 @@ modules/samba.nix         # Samba の共有とパスワード投入
 modules/syncthing.nix     # Syncthing (ネイティブ)
 modules/cloudflared.nix   # Cloudflare Tunnel (misskey 公開)
 modules/misskey.nix       # misskey の compose スタック (podman)
+modules/magic-packet-bridge.nix  # WoL 中継 (systemd)
 modules/secrets.nix       # sops-nix (age) の設定
+pkgs/magic-packet-bridge/ # WoL 中継アプリ (上流ソースを取り込み)
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # カーネルモジュール等 (nixos-generate-config --no-filesystems の出力を反映)
 hosts/minis/disk.nix      # disko によるディスク構成
@@ -246,6 +248,19 @@ sops --encrypt --input-type binary --output-type binary \
 確認済み (2026-10-25): 生成した compose が `docker compose config` を通る（web/db/redis/es）、
 VM で sops の binary 秘密が復号されて `/run/secrets/misskey_default_yml` に展開される。
 スタック自体はデータディスク前提なので VM では起動していない（実機デプロイ後に確認）。
+
+## Magic Packet Bridge (modules/magic-packet-bridge.nix)
+
+自宅の WoL 中継サーバー。旧環境は devcontainer イメージ + host network の compose。
+
+- アプリは上流 (gitlab.halby24.com) のソースを `pkgs/magic-packet-bridge/` に取り込んでビルド
+  (`yarn` + `tsc`、`fetchYarnDeps` の hash を固定)。
+- `systemd.services.magic-packet-bridge` として `DynamicUser` で常駐させる。
+- 環境変数は旧 `.env.production` と同じ (`LISTEN_PORT=10840`, `MAGIC_PACKET_PORT=2034`)。
+- 10840/tcp は `modules/server.nix` で許可。
+
+VM で確認済み (2026-10-25): サービス active、10840 を listen、
+`POST / {"mac":"FFFFFFFFFFFF"}` が「送信に成功しました」を返す。
 
 ## ディスク構成 (disko)
 

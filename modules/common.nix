@@ -15,6 +15,7 @@
     ./syncthing.nix
     ./cloudflared.nix
     ./misskey.nix
+    ./magic-packet-bridge.nix
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";
