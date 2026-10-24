@@ -13,7 +13,8 @@ modules/cockpit.nix       # Cockpit + cockpit-podman (コンテナ管理 UI)
 modules/samba.nix         # Samba の共有とパスワード投入
 modules/secrets.nix       # sops-nix (age) の設定
 hosts/minis/default.nix   # 実機のホスト設定
-hosts/minis/hardware.nix  # 暫定。実機で nixos-generate-config したものに差し替える
+hosts/minis/hardware.nix  # カーネルモジュール等 (nixos-generate-config --no-filesystems の出力を反映)
+hosts/minis/disk.nix      # disko によるディスク構成
 hosts/vm/default.nix      # VM テスト用 (qemu-vm, KVM, SSH 2222 転送)
 hosts/vm/test_age.key     # VM 専用の age 鍵 (ダミー秘密用。公開前提)
 keys/halby.pub            # halby の SSH 公開鍵 (GitHub の halby24.keys と同一)
@@ -187,20 +188,58 @@ VM で確認済み (2026-10-24):
 - `podman.socket` が active
 - firewall に 9090 が入り、21 / 9000 が消えている
 
+## ディスク構成 (disko)
+
+`hosts/minis/disk.nix` で宣言。`nixos-anywhere` は disko モジュールを検出して自動で実行する。
+
+| デバイス | パーティション | 内容 |
+| --- | --- | --- |
+| `/dev/nvme0n1` (476G) | `disk-main-ESP` 1G | vfat → `/boot` (systemd-boot) |
+| | `disk-main-swap` 8G | swap (`resumeDevice = false`) |
+| | `disk-main-root` 残り | ext4 → `/` |
+| `/dev/sda1` (1.8T) | – | 既存 btrfs をラベル `data_ssd` で `/mnt/data_ssd` にマウント（**disko では触らない**） |
+
+- システムディスクは毎回まっさらにする前提。データディスクはフォーマットされない。
+- パーティションは `/dev/disk/by-partlabel/disk-main-*` で参照される。
+- `hardware.nix` はカーネルモジュール・マイクロコードのみを持ち、`fileSystems` は disko 側へ移動した。
+  実機で採取するときは `nixos-generate-config --no-filesystems --root /mnt`。
+
+確認:
+
+```sh
+nix build .#nixosConfigurations.minis.config.system.build.diskoScript
+head result    # 生成されるパーティション / mkfs / mount スクリプト
+
+nix eval --json .#nixosConfigurations.minis.config.fileSystems --apply builtins.attrNames
+# ["/","/boot","/mnt/data_ssd"]
+```
+
+確認済み (2026-10-24): `fileSystems = [ "/" "/boot" "/mnt/data_ssd" ]`、
+`swapDevices = [ "/dev/disk/by-partlabel/disk-main-swap" ]`、disko スクリプトに
+`mkfs.vfat` / `mkswap` / `mkfs.ext4` と `/mnt` `/mnt/boot` へのマウントが出力される。
+
 ## 実機投入 (未実施)
 
 前提: 事前にバックアップ（現状 restic は 6 月から停止しているので注意）。
+**NVMe は disko で初期化される**（データディスク `/mnt/data_ssd` は対象外）。
 
 ```sh
-# 対象機でハードウェア定義を採取し、hosts/minis/hardware.nix を置き換える
-nixos-generate-config --root /mnt
+# ハードウェア情報の採取（fileSystems は disko が持つので不要）
+nixos-generate-config --no-filesystems --root /mnt
 
-# インストール（既定ではディスクを消す）
-nixos-anywhere --flake .#minis root@192.168.2.130
+# 別マシン (x86_64-linux) から実行する。ホスト鍵を引き継ぐこと (sops の復号鍵)
+nixos-anywhere --flake .#minis --copy-host-keys root@192.168.2.130
 ```
 
 注意点:
 
-- `hosts/minis/hardware.nix` の UUID は**現行 Ubuntu のパーティションを流用する前提**。`/` を再フォーマットするなら UUID が変わるので、生成し直すか disko で宣言的にパーティションを切る。
-- `/mnt/data_ssd` (1.8T btrfs) は別ディスクなので、NVMe 側だけ入れ替えればデータは残せる。
+- **nixos-anywhere は対象機の外から実行する**必要がある（kexec で対象を再起動するため）。
+  minis 自身を対象にするなら conoha など別ホストから。手元で完結させるなら
+  NixOS インストーラ USB で起動して
+  `disko --mode destroy,format,mount --flake .#minis` → `nixos-install --flake .#minis --root /mnt`。
+- `--copy-host-keys` を忘れると、sops の age identity（SSH ホスト鍵）が変わり復号できなくなる。
+  その場合は新しいホスト鍵を `ssh-to-age` で変換して `.sops.yaml` に追加し、`sops updatekeys` する。
+- `/mnt/data_ssd` は別ディスクなので、NVMe 側だけ入れ替えればデータは残せる。
 - stateVersion は 26.05 固定（移行後に上げない）。
+- インストール後の確認: `sudo getent shadow halby`（sops のハッシュ）、Cockpit (9090) のログイン、
+  `systemctl --failed`。

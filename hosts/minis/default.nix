@@ -1,5 +1,8 @@
 {
-  imports = [ ./hardware.nix ];
+  imports = [
+    ./hardware.nix
+    ./disk.nix
+  ];
 
   networking.hostName = "minis";
 
