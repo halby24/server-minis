@@ -13,6 +13,20 @@
   };
   boot.loader.grub.enable = false;
 
+  # sops は VM 専用の固定 age key を使う (ダミーの秘密しか復号できない)
+  sops.age.sshKeyPaths = lib.mkForce [ ];
+  sops.age.keyFile = lib.mkForce "/var/lib/sops-nix/key.txt";
+  sops.secrets.samba_halby.sopsFile = lib.mkForce ../../secrets/vm/samba.yaml;
+
+  # VM は固定の age key を使う (テスト専用。ダミーの秘密しか復号できない)。
+  # sops の activation (setupSecrets) より先に鍵を置く必要がある。
+  system.activationScripts.vmAgeKey = {
+    text = ''
+      install -D -m 0400 ${./test_age.key} /var/lib/sops-nix/key.txt
+    '';
+  };
+  system.activationScripts.setupSecrets.deps = [ "vmAgeKey" ];
+
   virtualisation.vmVariant = {
     virtualisation = {
       memorySize = 4096;

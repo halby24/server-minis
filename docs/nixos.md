@@ -9,16 +9,22 @@ Ubuntu 素朴運用から NixOS + flake に移行するための最小構成。
 flake.nix                 # nixosConfigurations: minis (実機) / minis-vm (確認用)
 modules/common.nix        # 実機・VM 共通の最小設定
 modules/server.nix        # firewall / tailscale / podman / journald
+modules/samba.nix         # Samba の共有とパスワード投入
+modules/secrets.nix       # sops-nix (age) の設定
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # 暫定。実機で nixos-generate-config したものに差し替える
 hosts/vm/default.nix      # VM テスト用 (qemu-vm, KVM, SSH 2222 転送)
+hosts/vm/test_age.key     # VM 専用の age 鍵 (ダミー秘密用。公開前提)
 keys/halby.pub            # halby の SSH 公開鍵 (GitHub の halby24.keys と同一)
+.sops.yaml                # sops の暗号化ルール (recipients)
+secrets/minis/*.yaml      # 実機用の暗号化された秘密情報
+secrets/vm/*.yaml         # VM テスト用 (ダミー)
 ```
 
 方針:
 
 - 共通部分は `modules/` に切り出し、実機と VM の両方から import する（VM で事前検証するため）。
-- 秘密情報はまだ扱っていない。必要になったら sops-nix / agenix を検討する。
+- 秘密情報は sops-nix + age で暗号化してリポジトリに置く。
 
 ## ビルド環境
 
@@ -91,6 +97,57 @@ VM で確認済み (2026-10-24):
 
 portainer は `/run/docker.sock` をマウントすれば動く見込み（未検証）。
 compose を podman ネイティブにするなら quadlet への移行を別途検討する。
+
+## 秘密情報 (sops-nix)
+
+- 暗号化された秘密は `secrets/` に置き、`sops-nix` が起動時に `/run/secrets/<name>` へ復号する。
+- 実機の復号鍵は **SSH ホスト鍵** (`/etc/ssh/ssh_host_ed25519_key`)。追加の鍵ファイル配布が不要。
+- `.sops.yaml` の recipient:
+  - `&minis`: 現行 minis の SSH ホスト鍵から `ssh-to-age` で導出
+    (`age1lytk9qynst8c0ganxrt68vvmsf9h93l9nfueh85t2razr7ksdeaqv9j6xc`)
+  - `&halby`: この Mac の age 鍵 (`~/.config/sops/age/keys.txt`)
+  - `&vm`: VM テスト専用鍵 (`hosts/vm/test_age.key`、リポジトリに公開されている)
+- VM は `system.activationScripts.vmAgeKey` で上記テスト鍵を `/var/lib/sops-nix/key.txt` に置き、
+  `setupSecrets` より先に実行されるようにしている。復号できるのはダミー秘密のみ。
+
+### 編集方法
+
+Mac 側のツール (`brew install sops age`) と鍵が必要。sops 3.13 は既定で
+`~/.config/sops/age/keys.txt` を拾わなかったため、環境変数で明示する。
+
+```sh
+export SOPS_AGE_KEY_FILE=$HOME/.config/sops/age/keys.txt
+sops secrets/minis/samba.yaml          # エディタで編集
+```
+
+新しい秘密ファイルを作るときは creation_rules を効かせるためパスを明示する。
+
+```sh
+sops --encrypt --input-type yaml --output-type yaml \
+  --filename-override secrets/minis/foo.yaml plain.yaml > secrets/minis/foo.yaml
+```
+
+### 実機インストール時の注意
+
+- ホスト鍵を引き継がないと復号できない。`nixos-anywhere` でホスト鍵をコピーするか、
+  インストール後に新しい公開鍵を `ssh-to-age` で変換して `.sops.yaml` に追加し、
+  `sops updatekeys secrets/minis/samba.yaml` を実行する。
+- `secrets/minis/samba.yaml` の `halby` は現在 `CHANGE_ME`。デプロイ前に実際の SMB パスワードへ変更すること
+  (未設定のままだと `samba-password.service` が失敗する)。
+
+## Samba (modules/samba.nix)
+
+- 共有: `[halby]` = `/home/halby`, `[syncthing]` = `/mnt/data_ssd/syncthing`（どちらも `valid users = halby`）。
+- `security = user` / `map to guest = bad user`、`openFirewall = false`（firewall は server.nix 側）。
+- パスワードは sops の `samba_halby` を読み、`systemd.services.samba-password` (oneshot) が
+  `smbpasswd -a -s halby` で `passdb.tdb` に反映する。毎起動で実行されるが冪等。
+- NixOS 26.05 では `services.samba.syncPasswordsByPam` が廃止されているため、この方式にしている。
+
+VM で確認済み (2026-10-24):
+
+- sops の復号 (`/run/secrets/samba_halby`) と `samba-password.service` の成功
+- 正しいパスワードで `smbclient //127.0.0.1/halby -U halby%test1234` がディレクトリ一覧を返す
+- 誤ったパスワードは `NT_STATUS_LOGON_FAILURE`
 
 ## 実機投入 (未実施)
 

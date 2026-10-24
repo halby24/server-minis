@@ -7,7 +7,11 @@
   ...
 }:
 {
-  imports = [ ./server.nix ];
+  imports = [
+    ./server.nix
+    ./secrets.nix
+    ./samba.nix
+  ];
 
   nixpkgs.hostPlatform = "x86_64-linux";
   system.stateVersion = "26.05";
