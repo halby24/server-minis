@@ -29,6 +29,15 @@
   };
   system.activationScripts.setupSecrets.deps = [ "vmAgeKey" ];
 
+  # VM にはデータディスクが無いので syncthing の置き場所を変える
+  # (/home/halby 配下なら halby が自分で作成できる)
+  services.syncthing.dataDir = "/home/halby/syncthing";
+  services.syncthing.configDir = "/home/halby/syncthing";
+
+  # cloudflared はダミートークン。VM では自動起動しない (Cloudflare に繋がらないため)
+  sops.secrets.cloudflared_token.sopsFile = lib.mkForce ../../secrets/vm/cloudflared.yaml;
+  systemd.services.cloudflared-misskey.wantedBy = lib.mkForce [ ];
+
   virtualisation.vmVariant = {
     virtualisation = {
       memorySize = 4096;

@@ -12,6 +12,8 @@
     ./secrets.nix
     ./samba.nix
     ./cockpit.nix
+    ./syncthing.nix
+    ./cloudflared.nix
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";

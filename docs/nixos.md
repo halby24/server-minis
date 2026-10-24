@@ -11,6 +11,8 @@ modules/common.nix        # 実機・VM 共通の最小設定
 modules/server.nix        # firewall / tailscale / podman / journald
 modules/cockpit.nix       # Cockpit + cockpit-podman (コンテナ管理 UI)
 modules/samba.nix         # Samba の共有とパスワード投入
+modules/syncthing.nix     # Syncthing (ネイティブ)
+modules/cloudflared.nix   # Cloudflare Tunnel (misskey 公開)
 modules/secrets.nix       # sops-nix (age) の設定
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # カーネルモジュール等 (nixos-generate-config --no-filesystems の出力を反映)
@@ -85,7 +87,7 @@ nix build .#nixosConfigurations.minis-vm.config.system.build.vm
 
 ## サーバー基本設定 (modules/server.nix)
 
-- **firewall**: 有効化。残すサービスのポートを明示許可 (22, 3002, 8384, 10840, 22000/tcp・udp)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp、Cockpit は `services.cockpit.openFirewall` で 9090/tcp を開く。`tailscale0` と `podman0`/`podman1` は trusted。
+- **firewall**: 有効化。残すサービスのポートを明示許可 (22, 3002, 8384, 10840)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp、Cockpit は `services.cockpit.openFirewall` で 9090/tcp、Syncthing は `openDefaultPorts` で 22000/tcp・udp と 21027/udp を開く。`tailscale0` と `podman0`/`podman1` は trusted。
 - **移行対象外**: tgt (iSCSI, 3260) / gitea (8000, 2226) / openclaw (18789-18790) / vsftpd (21, 廃止) / portainer (9000, Cockpit に置換)。理由は `modules/server.nix` 冒頭に記載。
 - **残すもの**: misskey (3002), syncthing (8384, 22000), magic_packet_bridge (10840, 使用中), samba, cockpit。
 - **tailscale**: `services.tailscale.enable` のみ。認証 (`tailscale up`) は手動で行う。
@@ -187,6 +189,32 @@ VM で確認済み (2026-10-24):
 - cockpit の plugin 一覧に `podman` が含まれる
 - `podman.socket` が active
 - firewall に 9090 が入り、21 / 9000 が消えている
+
+## Syncthing (modules/syncthing.nix)
+
+Docker + host network で動かしていたものを `services.syncthing` に置き換え。
+
+- `user = "halby"`、`dataDir` / `configDir` は既存の `/mnt/data_ssd/syncthing`（設定は `config/` 配下）。
+  設定を引き継ぐのでデバイス ID とフォルダ ID は変わらない。
+- `guiAddress = "0.0.0.0:8384"`（firewall は server.nix）、`openDefaultPorts = true`。
+- デバイス・フォルダの追加は Web UI で行うため `overrideDevices` / `overrideFolders` は `false`
+  にしてある（Nix 側で既存設定が消されないように）。
+- パスは `lib.mkDefault` にしてあり、VM では `/home/halby/syncthing` に差し替えている。
+
+VM で確認済み (2026-10-24): `syncthing` active、8384/22000 を listen、GUI が 200、`config.xml` を自動生成。
+
+## Cloudflare Tunnel (modules/cloudflared.nix)
+
+misskey の公開経路。既存のダッシュボード管理トンネルをそのまま使う。
+
+- `services.cloudflared` は credentialsFile 前提で token を扱えないため、自前の systemd unit を定義。
+- トークンは sops (`secrets/minis/cloudflared.yaml` → `/run/secrets/cloudflared_token`)。
+  旧 compose の `TUNNEL_TOKEN` を移したもの。`TUNNEL_TOKEN_FILE` で渡す。
+- 実行ユーザーは `cloudflared` (system user)。ingress はダッシュボード側 (`http://localhost:3002`)。
+- misskey 本体はまだ compose のままなので、3002 の公開は別途 podman 化が必要。
+
+VM で確認済み (2026-10-24): unit が起動し、ダミートークンを読んで
+「Provided Tunnel token is not valid」で失敗するところまで（配線の確認）。実接続はデプロイ後。
 
 ## ディスク構成 (disko)
 
