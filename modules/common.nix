@@ -43,10 +43,14 @@
     };
   };
 
+  # Unix アカウントは宣言的に管理する (パスワードは sops のハッシュから設定)
+  users.mutableUsers = false;
+
   users.users.halby = {
     isNormalUser = true;
     extraGroups = [ "wheel" ];
     shell = pkgs.zsh;
+    hashedPasswordFile = config.sops.secrets.halby_password.path;
     openssh.authorizedKeys.keyFiles = [ ../keys/halby.pub ];
   };
   programs.zsh.enable = true;

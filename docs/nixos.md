@@ -98,9 +98,6 @@ VM で確認済み (2026-10-24):
 - `podman info` が rootless で動作、`/etc/subuid` は自動採番
 - `/run/docker.sock` 経由で `docker ps` / `docker run` / `docker-compose up` が動作（nginx を起動して HTTP 200 を確認）
 
-portainer は `/run/docker.sock` をマウントすれば動く見込み（未検証）。
-compose を podman ネイティブにするなら quadlet への移行を別途検討する。
-
 ## 秘密情報 (sops-nix)
 
 - 暗号化された秘密は `secrets/` に置き、`sops-nix` が起動時に `/run/secrets/<name>` へ復号する。
@@ -130,13 +127,33 @@ sops --encrypt --input-type yaml --output-type yaml \
   --filename-override secrets/minis/foo.yaml plain.yaml > secrets/minis/foo.yaml
 ```
 
+### halby の Unix パスワード
+
+`users.mutableUsers = false` にし、`users.users.halby.hashedPasswordFile` に sops で復号した
+ハッシュを渡している (`neededForUsers = true` により `/run/secrets-for-users/halby_password`)。
+
+- `passwd` による変更はできない。パスワード変更は sops の更新 + 再ビルドで行う。
+- SMB のパスワード (`secrets/minis/samba.yaml`) とは別物。
+
+```sh
+# ハッシュ生成 (パスワードを2回入力)
+openssl passwd -6
+# yescrypt にしたい場合: nix shell nixpkgs#whois -c mkpasswd -m yescrypt
+
+sops secrets/minis/users.yaml   # halby: に $6$... / $y$... を貼る
+```
+
+現在 `secrets/minis/users.yaml` は `!`（ロック）のプレースホルダ。設定するまで
+Cockpit などのパスワードログインはできない（SSH は鍵認証のみなので影響なし）。
+
 ### 実機インストール時の注意
 
 - ホスト鍵を引き継がないと復号できない。`nixos-anywhere` でホスト鍵をコピーするか、
   インストール後に新しい公開鍵を `ssh-to-age` で変換して `.sops.yaml` に追加し、
-  `sops updatekeys secrets/minis/samba.yaml` を実行する。
-- `secrets/minis/samba.yaml` の `halby` は現在 `CHANGE_ME`。デプロイ前に実際の SMB パスワードへ変更すること
-  (未設定のままだと `samba-password.service` が失敗する)。
+  `sops updatekeys <file>` を実行する。
+- `secrets/minis/samba.yaml` の `halby` は SMB のパスワード（設定済み）。
+- `secrets/minis/users.yaml` の `halby` は Unix パスワードのハッシュ。未設定 (`!`) のままデプロイすると
+  Cockpit にログインできないので、事前に設定しておく。
 
 ## Samba (modules/samba.nix)
 
@@ -158,12 +175,14 @@ Portainer の置き換え。`services.cockpit` + `cockpit-podman` プラグイ�
 
 - 9090/tcp (HTTPS, 自己署名証明書)。`openFirewall = true` で LAN に開く。
 - cockpit-podman は system の podman ソケット経由でコンテナ / イメージ / ボリュームを操作する。
-- **ログインは PAM (Unix パスワード)**。halby は Unix パスワードを持っていないため、
-  実機では `sudo passwd halby` で設定する（未設定だと Web UI にログインできない）。
+- **ログインは PAM (Unix パスワード)**。パスワードは sops の `halby_password` から
+  `hashedPasswordFile` 経由で設定する（[halby の Unix パスワード](#halby-の-unix-パスワード) 参照）。
 
 VM で確認済み (2026-10-24):
 
 - `cockpit.socket` が active、9090 を listen、`curl -k https://127.0.0.1:9090/` が 200
+- sops のハッシュが `/etc/shadow` に入り、PAM (`su`) でパスワード認証できる
+- `GET /cockpit/login` + Basic 認証で 200 とセッション cookie が返る（誤パスワードは 401）
 - cockpit の plugin 一覧に `podman` が含まれる
 - `podman.socket` が active
 - firewall に 9090 が入り、21 / 9000 が消えている

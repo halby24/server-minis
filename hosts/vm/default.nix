@@ -17,6 +17,8 @@
   sops.age.sshKeyPaths = lib.mkForce [ ];
   sops.age.keyFile = lib.mkForce "/var/lib/sops-nix/key.txt";
   sops.secrets.samba_halby.sopsFile = lib.mkForce ../../secrets/vm/samba.yaml;
+  sops.secrets.halby_password.sopsFile = lib.mkForce ../../secrets/vm/users.yaml;
+  system.activationScripts.setupSecretsForUsers.deps = [ "vmAgeKey" ];
 
   # VM は固定の age key を使う (テスト専用。ダミーの秘密しか復号できない)。
   # sops の activation (setupSecrets) より先に鍵を置く必要がある。
