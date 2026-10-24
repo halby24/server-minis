@@ -83,7 +83,8 @@ nix build .#nixosConfigurations.minis-vm.config.system.build.vm
 
 ## サーバー基本設定 (modules/server.nix)
 
-- **firewall**: 有効化。現行 minis の待ち受けポートを明示許可 (21, 22, 139, 445, 2226, 3002, 3260, 8000, 8384, 9000, 10840, 18789-18790, 22000/tcp・udp, 137-138/udp)。`tailscale0` と `podman0`/`podman1` は trusted。
+- **firewall**: 有効化。残すサービスのポートを明示許可 (21, 22, 3002, 8384, 9000, 10840, 22000/tcp・udp)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp を開く。`tailscale0` と `podman0`/`podman1` は trusted。
+- **移行対象外**: tgt (iSCSI, 3260) / gitea (8000, 2226) / openclaw (18789-18790)。使わないので firewall からも外している（`modules/server.nix` 冒頭に理由を記載）。
 - **tailscale**: `services.tailscale.enable` のみ。認証 (`tailscale up`) は手動で行う。
 - **podman**: rootless 既定 + `dockerCompat` (docker CLI シム) + `dockerSocket.enable` (`/run/docker.sock` → podman ソケット)。`halby` を `podman` グループに追加（root 相当の権限を持つ点に注意）。`docker-compose` (v5.4.0) も導入。
 - **journald**: `SystemMaxUse=2G`, `SystemMaxFileSize=200M`。

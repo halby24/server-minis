@@ -1,30 +1,28 @@
 # サーバーとしての基本設定。
-# 現行 minis の待ち受けポートを明示的に許可し、tailscale と podman を有効にする。
-{ lib, pkgs, ... }:
+# 待ち受けポートはここで一元管理し、tailscale と podman を有効にする。
+#
+# 移行対象外 (2026-10-24 判断):
+#   - tgt (iSCSI ターゲット, 3260): ターゲット定義なし。使うなら services.tgt を別途追加する
+#   - gitea (8000/2226): リポジトリ 2 件のみで移行しない
+#   - openclaw (18789/18790): 移行しない
+# 各サービスのポートは、モジュール側で openFirewall を立てられるならそちらに寄せる
+# (例: samba は modules/samba.nix の services.samba.openFirewall)。
+{ pkgs, ... }:
 {
   # 現行 Ubuntu では ufw が無効だったため、ここで初めて明示的な制限をかける。
-  # ポートは 2026-10-24 時点の稼働サービスに合わせている (docs/current-state.md 参照)。
+  # ポートは 2026-10-24 時点で残すサービスに合わせている (docs/current-state.md 参照)。
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [
-      21 # vsftpd (移行後に廃止予定)
+      21 # vsftpd (要否は未確認。廃止するなら削除)
       22 # ssh
-      139 # samba
-      445 # samba
-      2226 # gitea ssh
       3002 # misskey
-      3260 # tgt (未使用)
-      8000 # gitea
-      8384 # syncthing
+      8384 # syncthing (web UI)
       9000 # portainer
       10840 # magic_packet_bridge
-      18789 # openclaw
-      18790 # openclaw bridge
       22000 # syncthing
     ];
     allowedUDPPorts = [
-      137 # samba
-      138 # samba
       22000 # syncthing
     ];
     # tailnet と podman のネットワークは素通し

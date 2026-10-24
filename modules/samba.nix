@@ -3,8 +3,8 @@
 {
   services.samba = {
     enable = true;
-    # firewall は modules/server.nix で管理している
-    openFirewall = false;
+    # 139/445/tcp と 137-138/udp を firewall で開ける
+    openFirewall = true;
     settings = {
       global = {
         workgroup = "WORKGROUP";
