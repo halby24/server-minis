@@ -11,6 +11,7 @@
     ./server.nix
     ./secrets.nix
     ./samba.nix
+    ./cockpit.nix
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";

@@ -5,8 +5,11 @@
 #   - tgt (iSCSI ターゲット, 3260): ターゲット定義なし。使うなら services.tgt を別途追加する
 #   - gitea (8000/2226): リポジトリ 2 件のみで移行しない
 #   - openclaw (18789/18790): 移行しない
+#   - vsftpd (21): 廃止 (平文 FTP。SMB / Syncthing で代替)
+#   - portainer (9000): Cockpit + cockpit-podman に置き換え (modules/cockpit.nix)
+#
 # 各サービスのポートは、モジュール側で openFirewall を立てられるならそちらに寄せる
-# (例: samba は modules/samba.nix の services.samba.openFirewall)。
+# (例: samba / cockpit)。
 { pkgs, ... }:
 {
   # 現行 Ubuntu では ufw が無効だったため、ここで初めて明示的な制限をかける。
@@ -14,12 +17,10 @@
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [
-      21 # vsftpd (要否は未確認。廃止するなら削除)
       22 # ssh
       3002 # misskey
       8384 # syncthing (web UI)
-      9000 # portainer
-      10840 # magic_packet_bridge
+      10840 # magic_packet_bridge (使用中)
       22000 # syncthing
     ];
     allowedUDPPorts = [
@@ -39,7 +40,7 @@
     enable = true;
     # 既存の compose を docker CLI で扱えるようにする
     dockerCompat = true;
-    # portainer / docker-compose が /run/docker.sock を使えるようにする
+    # docker-compose などが /run/docker.sock を使えるようにする
     # (podman グループのユーザーは root 相当の権限を持つ点に注意)
     dockerSocket.enable = true;
     defaultNetwork.settings.dns_enabled = true;

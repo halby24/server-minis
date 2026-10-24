@@ -9,6 +9,7 @@ Ubuntu 素朴運用から NixOS + flake に移行するための最小構成。
 flake.nix                 # nixosConfigurations: minis (実機) / minis-vm (確認用)
 modules/common.nix        # 実機・VM 共通の最小設定
 modules/server.nix        # firewall / tailscale / podman / journald
+modules/cockpit.nix       # Cockpit + cockpit-podman (コンテナ管理 UI)
 modules/samba.nix         # Samba の共有とパスワード投入
 modules/secrets.nix       # sops-nix (age) の設定
 hosts/minis/default.nix   # 実機のホスト設定
@@ -83,8 +84,9 @@ nix build .#nixosConfigurations.minis-vm.config.system.build.vm
 
 ## サーバー基本設定 (modules/server.nix)
 
-- **firewall**: 有効化。残すサービスのポートを明示許可 (21, 22, 3002, 8384, 9000, 10840, 22000/tcp・udp)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp を開く。`tailscale0` と `podman0`/`podman1` は trusted。
-- **移行対象外**: tgt (iSCSI, 3260) / gitea (8000, 2226) / openclaw (18789-18790)。使わないので firewall からも外している（`modules/server.nix` 冒頭に理由を記載）。
+- **firewall**: 有効化。残すサービスのポートを明示許可 (22, 3002, 8384, 10840, 22000/tcp・udp)。Samba は `services.samba.openFirewall` で 139/445/tcp・137-138/udp、Cockpit は `services.cockpit.openFirewall` で 9090/tcp を開く。`tailscale0` と `podman0`/`podman1` は trusted。
+- **移行対象外**: tgt (iSCSI, 3260) / gitea (8000, 2226) / openclaw (18789-18790) / vsftpd (21, 廃止) / portainer (9000, Cockpit に置換)。理由は `modules/server.nix` 冒頭に記載。
+- **残すもの**: misskey (3002), syncthing (8384, 22000), magic_packet_bridge (10840, 使用中), samba, cockpit。
 - **tailscale**: `services.tailscale.enable` のみ。認証 (`tailscale up`) は手動で行う。
 - **podman**: rootless 既定 + `dockerCompat` (docker CLI シム) + `dockerSocket.enable` (`/run/docker.sock` → podman ソケット)。`halby` を `podman` グループに追加（root 相当の権限を持つ点に注意）。`docker-compose` (v5.4.0) も導入。
 - **journald**: `SystemMaxUse=2G`, `SystemMaxFileSize=200M`。
@@ -149,6 +151,22 @@ VM で確認済み (2026-10-24):
 - sops の復号 (`/run/secrets/samba_halby`) と `samba-password.service` の成功
 - 正しいパスワードで `smbclient //127.0.0.1/halby -U halby%test1234` がディレクトリ一覧を返す
 - 誤ったパスワードは `NT_STATUS_LOGON_FAILURE`
+
+## Cockpit (modules/cockpit.nix)
+
+Portainer の置き換え。`services.cockpit` + `cockpit-podman` プラグインでコンテナを管理する。
+
+- 9090/tcp (HTTPS, 自己署名証明書)。`openFirewall = true` で LAN に開く。
+- cockpit-podman は system の podman ソケット経由でコンテナ / イメージ / ボリュームを操作する。
+- **ログインは PAM (Unix パスワード)**。halby は Unix パスワードを持っていないため、
+  実機では `sudo passwd halby` で設定する（未設定だと Web UI にログインできない）。
+
+VM で確認済み (2026-10-24):
+
+- `cockpit.socket` が active、9090 を listen、`curl -k https://127.0.0.1:9090/` が 200
+- cockpit の plugin 一覧に `podman` が含まれる
+- `podman.socket` が active
+- firewall に 9090 が入り、21 / 9000 が消えている
 
 ## 実機投入 (未実施)
 
