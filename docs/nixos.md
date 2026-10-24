@@ -8,6 +8,7 @@ Ubuntu 素朴運用から NixOS + flake に移行するための最小構成。
 ```
 flake.nix                 # nixosConfigurations: minis (実機) / minis-vm (確認用)
 modules/common.nix        # 実機・VM 共通の最小設定
+modules/server.nix        # firewall / tailscale / podman / journald
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # 暫定。実機で nixos-generate-config したものに差し替える
 hosts/vm/default.nix      # VM テスト用 (qemu-vm, KVM, SSH 2222 転送)
@@ -73,6 +74,23 @@ nix build .#nixosConfigurations.minis-vm.config.system.build.vm
 サービスを増やすときは `modules/` に切り出して共通化し、VM で先に確認する。
 
 停止は VM 内で `sudo poweroff`。抜けるだけなら `Ctrl-a x`。
+
+## サーバー基本設定 (modules/server.nix)
+
+- **firewall**: 有効化。現行 minis の待ち受けポートを明示許可 (21, 22, 139, 445, 2226, 3002, 3260, 8000, 8384, 9000, 10840, 18789-18790, 22000/tcp・udp, 137-138/udp)。`tailscale0` と `podman0`/`podman1` は trusted。
+- **tailscale**: `services.tailscale.enable` のみ。認証 (`tailscale up`) は手動で行う。
+- **podman**: rootless 既定 + `dockerCompat` (docker CLI シム) + `dockerSocket.enable` (`/run/docker.sock` → podman ソケット)。`halby` を `podman` グループに追加（root 相当の権限を持つ点に注意）。`docker-compose` (v5.4.0) も導入。
+- **journald**: `SystemMaxUse=2G`, `SystemMaxFileSize=200M`。
+
+VM で確認済み (2026-10-24):
+
+- `firewall.service` active、iptables に許可ポートが入る
+- `tailscaled` active（未ログイン状態）
+- `podman info` が rootless で動作、`/etc/subuid` は自動採番
+- `/run/docker.sock` 経由で `docker ps` / `docker run` / `docker-compose up` が動作（nginx を起動して HTTP 200 を確認）
+
+portainer は `/run/docker.sock` をマウントすれば動く見込み（未検証）。
+compose を podman ネイティブにするなら quadlet への移行を別途検討する。
 
 ## 実機投入 (未実施)
 
