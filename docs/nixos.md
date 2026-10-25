@@ -16,6 +16,7 @@ modules/cloudflared.nix   # Cloudflare Tunnel (misskey 公開)
 modules/misskey.nix       # misskey の compose スタック (podman)
 modules/magic-packet-bridge.nix  # WoL 中継 (systemd)
 modules/discord-bot.nix   # Web デプロイ BOT (systemd)
+modules/restic.nix        # restic のバックアップ受け口 (restic ユーザー)
 modules/secrets.nix       # sops-nix (age) の設定
 pkgs/magic-packet-bridge/ # WoL 中継アプリ (上流ソースを取り込み)
 pkgs/discord-bot/         # Discord BOT 本体 (index.js + discord.js)
@@ -283,6 +284,16 @@ tomarigi_hp_svelte の Web デプロイ BOT。旧環境は devcontainer 風イ�
 
 VM で確認済み (2026-10-25): サービスが起動し、ダミートークンで `TokenInvalid` になるところまで
 （パッケージ・env ファイル・作業ディレクトリの配線確認）。Discord 接続と実デプロイは実機デプロイ後。
+
+## バックアップ受け口 (modules/restic.nix)
+
+Windows クライアントから `sftp:restic@minis:/mnt/data_ssd/restic` に restic で書き込む構成。
+
+- `restic` ユーザーを **uid/gid 1001 固定**で作る。既存リポジトリの所有者が 1001 のため、
+  変えるとリポジトリを読めなくなる。
+- `~/.ssh/authorized_keys` は旧環境の内容をそのまま `keys/restic.pub` として取り込み。
+- リポジトリは `/mnt/data_ssd/restic`（disko は触らない）。SFTP は sshd の既定サブシステム。
+- 復元・確認は restic のパスワードが別途必要（Windows 側で管理）。
 
 ## ディスク構成 (disko)
 
