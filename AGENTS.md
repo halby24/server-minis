@@ -16,6 +16,7 @@
 
 - `docs/nixos.md` — flake 構成、モジュール、VM での確認方法
 - `docs/deploy.md` — 実機投入（Ubuntu → NixOS）の手順書・チェックリスト・ロールバック
+- `docs/restore-test.md` — restic の復元テスト手順と offsite コピーの注意
 
 ## アーキテクチャ
 
