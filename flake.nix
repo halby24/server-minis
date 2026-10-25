@@ -43,6 +43,16 @@
             ./hosts/vm
           ];
         };
+
+        # disko 構成の rehearsal 用 (実機と同じレイアウトで VM を作る)
+        minis-test = nixpkgs.lib.nixosSystem {
+          modules = [
+            sops-nix.nixosModules.sops
+            disko.nixosModules.disko
+            ./modules/common.nix
+            ./hosts/install-test
+          ];
+        };
       };
     };
 }

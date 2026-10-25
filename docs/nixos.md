@@ -22,6 +22,7 @@ pkgs/discord-bot/         # Discord BOT 本体 (index.js + discord.js)
 hosts/minis/default.nix   # 実機のホスト設定
 hosts/minis/hardware.nix  # カーネルモジュール等 (nixos-generate-config --no-filesystems の出力を反映)
 hosts/minis/disk.nix      # disko によるディスク構成
+hosts/install-test/       # disko 構成の VM rehearsal 用ホスト (minis-test)
 hosts/vm/default.nix      # VM テスト用 (qemu-vm, KVM, SSH 2222 転送)
 hosts/vm/test_age.key     # VM 専用の age 鍵 (ダミー秘密用。公開前提)
 keys/halby.pub            # halby の SSH 公開鍵 (GitHub の halby24.keys と同一)
@@ -312,6 +313,34 @@ nix eval --json .#nixosConfigurations.minis.config.fileSystems --apply builtins.
 確認済み (2026-10-24): `fileSystems = [ "/" "/boot" "/mnt/data_ssd" ]`、
 `swapDevices = [ "/dev/disk/by-partlabel/disk-main-swap" ]`、disko スクリプトに
 `mkfs.vfat` / `mkswap` / `mkfs.ext4` と `/mnt` `/mnt/boot` へのマウントが出力される。
+
+## VM でのインストール rehearsal (hosts/install-test)
+
+実機と同じ disko レイアウトでディスクイメージを作り、そこから起動する rehearsal 用の構成
+`minis-test` を用意した。
+
+- `hosts/install-test/disk.nix`: 実機と同じ GPT (ESP 1G / swap 8G / root 残り)
+- `hosts/install-test/default.nix`: 実機のモジュール一式 + テスト用の秘密・パス・無効化
+  - sops は `hosts/vm/test_age.key` で復号
+  - データディスクが無いので syncthing は `/home/halby/syncthing`
+  - misskey / cloudflared は無効、discord-bot はダミートークン
+  - `disko.devices.disk.main.imageSize = "20G"`、`disko.memSize = 4096`
+
+```sh
+nix build .#nixosConfigurations.minis-test.config.system.build.vmWithDisko
+./result/bin/disko-vm        # kvm グループ権限が必要 (SSH は host:2223 に転送)
+```
+
+結果 (2026-10-25、成功):
+
+- disko が作ったディスクから起動: `vda1` 1G vfat `/boot`、`vda2` 8G swap (有効)、`vda3` 11G ext4 `/`
+- sops の秘密が復号され `/run/secrets/{cloudflared_token,discord_bot_token,misskey_default_yml,samba_halby}` が生成
+- `samba-smbd` / `samba-nmbd` / `samba-winbindd` 稼働、`smbclient` で共有一覧 (`halby`, `syncthing`)
+- Cockpit 9090 が 200、Syncthing 8384 が 200、magic_packet_bridge が Magic Packet 送信成功
+- discord-bot はダミートークンで再起動ループ (想定どおり)、misskey は無効、`systemctl --failed` なし
+
+補足: disko の `system.build.installTest` はテスト用ディスクが 4G 固定で 8G swap が入らないため使わず、
+`vmWithDisko` (20G イメージ) で確認している。
 
 ## 実機投入 (未実施)
 
