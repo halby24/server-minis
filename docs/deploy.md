@@ -101,11 +101,22 @@ rsync -a --exclude .git --exclude '*.qcow2' --exclude result \
   ./ conoha:~/minis/
 ```
 
+> 2026-10-25 時点で conoha は Nix 導入済み・`~/minis` 同期済み。
+
 対象機へは **halby ユーザー + sudo** で入れる（nixos-anywhere が sudo を検出して昇格する）。
 
 ```sh
 ssh conoha 'cd ~/minis && nix run github:nix-community/nixos-anywhere -- --help'
 ```
+
+### conoha の制約（重要）
+
+conoha は Ubuntu 20.04 / kernel 5.4 で、**NixOS 26.05 の closure をローカルビルドできない**
+（`systemd-hwdb` が `Failed to determine if ... points to the root directory` で失敗する）。
+
+- `nix eval`（評価）は成功するので、`nixos-anywhere` の `--eval-store auto` は使える
+- ビルドは **kexec 後のインストーラ環境（minis, kernel 6.18 / RAM 15G）に任せる** = `--build-on remote`
+- どうしても conoha でビルドしたい場合は、より新しいカーネルのホストに替える
 
 ---
 
@@ -138,10 +149,13 @@ cd ~/minis
 
 nix run github:nix-community/nixos-anywhere -- \
   --flake .#minis \
+  --build-on remote \
   --copy-host-keys \
   halby@192.168.2.130
 ```
 
+- `--build-on remote` は conoha のカーネルが古いため必須（§4）。ビルドは kexec 後の
+  インストーラ環境で行われる。
 - `--copy-host-keys` は**必須**。sops の age identity（`/etc/ssh/ssh_host_ed25519_key`）を
   引き継がないと、起動後にすべての秘密が復号できなくなる。
 - disko が NVMe を再パーティション（ESP 1G / swap 8G / root 残り）し、`/mnt/data_ssd` には触らない。
