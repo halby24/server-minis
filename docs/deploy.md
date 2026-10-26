@@ -21,8 +21,8 @@
 
 ## 1. 事前チェックリスト
 
-- [ ] restic バックアップが完了している（`restic snapshots` で最新が見える）
-- [ ] `restic check` が通る
+- [x] restic バックアップが完了している（2026-10-26 時点で 20 スナップショット）
+- [x] `restic check` が通る（2026-10-26 実施）
 - [ ] **復元テスト**: 別ディレクトリへ `restic restore latest --target /tmp/restore-test` して中身を確認
   （手順は [restore-test.md](./restore-test.md)。**2026-10-26 に Windows で実施済み**）
 - [ ] `secrets/minis/*` がすべて設定済み
@@ -32,9 +32,9 @@
   - `misskey-default.yml`（misskey 設定）
   - `discord-bot.yaml`（BOT_TOKEN）
 - [ ] `.sops.yaml` の `&minis` が**現在の minis のホスト鍵**から導出した値と一致
-- [ ] `hardware.nix` を実機の情報で更新（手順は §5）
+- [x] `hardware.nix` を実機の情報で更新（2026-10-26 実施、§5）
 - [ ] 実行元ホストが用意できている（§4）
-- [ ] **`/home` の退避**（§2）— これを忘れるとデプロイ BOT の鍵・設定が消える
+- [x] **`/home` の退避**（2026-10-26 実施、11G、§2）— 忘れるとデプロイ BOT の鍵・設定が消える
 
 ---
 
@@ -49,6 +49,8 @@ sudo rsync -a --info=progress2 \
   --exclude 'node_modules' --exclude '.pnpm-store' \
   /home/halby/ /mnt/data_ssd/migration-backup/home/
 ```
+
+> 2026-10-26 に実施済み（11G）。`.ssh` / `ci/tomarigi_hp_svelte`（`.env`, `.ssh`）/ `servers/misskey/.config` の存在を確認済み。
 
 特に重要なもの:
 
@@ -136,6 +138,9 @@ nixos-generate-config --no-filesystems --root /tmp
 ```sh
 nixos-facter > hardware.json
 ```
+
+> 2026-10-26 に実機上で `nixos-generate-config --no-filesystems --root /tmp/hwgen` を実行し、
+> `hosts/minis/hardware.nix` に反映済み（kernel modules: xhci_pci, ahci, nvme / kvm-intel）。
 
 > `fileSystems` は disko が持つので**取り込まない**（`--no-filesystems`）。
 
@@ -271,6 +276,12 @@ journalctl -u discord-bot -f      # "Logged in as ..." を確認
 
 - **ホスト鍵**: 引き継がないと sops が復号できない。引き継げなかった場合は
   新ホスト鍵を `ssh-to-age` で変換して `.sops.yaml` に追加し、`sops updatekeys` を実行。
+  - 復号可否の確認は **`ssh-to-age -private-key -i <鍵>`** で得た identity を使う。
+    sops-nix は内部で `ssh-to-age` ライブラリを使うため、これが実際の経路。
+    `age -d -i /etc/ssh/ssh_host_ed25519_key` は native な age recipient に対しては
+    失敗する（age CLI の SSH 対応の仕様）ので、この結果で判断しない。
+  - 2026-10-26 に「`ssh-to-age < host key.pub` の recipient」と
+    「`ssh-to-age -private-key -i host key` の identity」で復号できることを実機で確認済み。
 - **SSH の host key 警告**: ホスト鍵を引き継ぐので、クライアント側の known_hosts はそのまま使える。
 - **Tailscale**: `tailscale up` は手動。ホスト名は `networking.hostName = "minis"` で維持。
 - **Cloudflare Tunnel**: token は sops 済み。DNS は変更不要。
