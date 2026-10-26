@@ -25,15 +25,15 @@
 - [x] `restic check` が通る（2026-10-26 実施）
 - [ ] **復元テスト**: 別ディレクトリへ `restic restore latest --target /tmp/restore-test` して中身を確認
   （手順は [restore-test.md](./restore-test.md)。**2026-10-26 に Windows で実施済み**）
-- [ ] `secrets/minis/*` がすべて設定済み
+- [x] `secrets/minis/*` がすべて設定済み（samba / users / cloudflared / misskey / discord-bot）
   - `samba.yaml`（SMB パスワード）
   - `users.yaml`（halby の Unix パスワードハッシュ）
   - `cloudflared.yaml`（トンネルトークン）
   - `misskey-default.yml`（misskey 設定）
   - `discord-bot.yaml`（BOT_TOKEN）
-- [ ] `.sops.yaml` の `&minis` が**現在の minis のホスト鍵**から導出した値と一致
+- [x] `.sops.yaml` の `&minis` が**現在の minis のホスト鍵**から導出した値と一致（2026-10-26 確認）
 - [x] `hardware.nix` を実機の情報で更新（2026-10-26 実施、§5）
-- [ ] 実行元ホストが用意できている（§4）
+- [x] 実行元ホストが用意できている（conoha、2026-10-26）
 - [x] **`/home` の退避**（2026-10-26 実施、11G、§2）— 忘れるとデプロイ BOT の鍵・設定が消える
 
 ---
