@@ -24,7 +24,7 @@
 - [ ] restic バックアップが完了している（`restic snapshots` で最新が見える）
 - [ ] `restic check` が通る
 - [ ] **復元テスト**: 別ディレクトリへ `restic restore latest --target /tmp/restore-test` して中身を確認
-  （手順は [restore-test.md](./restore-test.md)）
+  （手順は [restore-test.md](./restore-test.md)。**2026-10-26 に Windows で実施済み**）
 - [ ] `secrets/minis/*` がすべて設定済み
   - `samba.yaml`（SMB パスワード）
   - `users.yaml`（halby の Unix パスワードハッシュ）
