@@ -77,11 +77,20 @@ Remove-Item -Recurse -Force D:\restic-restore-test
 
 ## 判定基準
 
-- [ ] `restic snapshots` で最新スナップショットが見える
-- [ ] `restic check` が exit 0
+- [x] `restic snapshots` で最新スナップショットが見える（2026-10-26 に 20 件を確認）
+- [x] `restic check` が exit 0（2026-10-26 実施、エラーなし）
 - [ ] `restic check --read-data-subset=5%` が exit 0
 - [ ] 復元したファイルが開ける
 - [ ] ファイル数・サイズ（またはハッシュ）が元と一致
+
+### 実施記録
+
+| 日付 | 内容 | 結果 |
+| --- | --- | --- |
+| 2026-10-26 | `restic check`（構造・参照） | エラーなし |
+| 2026-10-26 | 中断アップロードの残骸 `*-restic-temp-*` が 14 個 | 参照されていない（check は通る）。`--read-data` 後に整理予定 |
+| 未実施 | `restic check --read-data-subset=5%` | データ内容の実読チェック |
+| 未実施 | 部分復元とハッシュ検証 | 実際に戻せるかの確認 |
 
 ## 失敗したとき
 
