@@ -279,3 +279,27 @@ journalctl -u discord-bot -f      # "Logged in as ..." を確認
 - **restic**: `restic` ユーザーの uid/gid は 1001 固定。リポジトリの所有者と一致させること。
 - **sops の鍵バックアップ**: この Mac の `~/.config/sops/age/keys.txt` は 1Password 等に保管。
 - **Nix の自動更新**: `nix.gc` は weekly。`system.autoUpgrade` は未設定（必要なら追加）。
+
+---
+
+## 付録: 事前クリーンアップ実施記録 (2026-10-26)
+
+移行前の Ubuntu 上で実施した整理。データディスクは 816G 空き。
+
+| 対象 | 結果 |
+| --- | --- |
+| Docker build cache | 58.97GB 削除 |
+| 未使用イメージ | 46.3GB 削除（39 → 11、すべて稼働中） |
+| 停止コンテナ | 2 個削除 |
+| 未使用ネットワーク | 2 個削除 |
+| tgt (iSCSI) | 停止 + 無効化 |
+| vsftpd | 停止 + 無効化（廃止決定） |
+| gitea | リポジトリを bundle 退避（`migration-backup/gitea-bundles/`、complete history 検証済み）→ スタック停止・データ 896M 削除 |
+| /mnt/data_ssd/storage | `storage-2026-10-26.tar.zst`（3.5G）にアーカイブして削除（9.9G 解放、zstd 整合性確認済み） |
+| restic の `*-restic-temp-*` | 14 個（154.6MB）削除 |
+
+ルートディスクは 131G → 70G（61G 解放）。
+
+退避物: `/mnt/data_ssd/migration-backup/`
+- `gitea-bundles/`（2 リポジトリ、complete history）
+- `storage-2026-10-26.tar.zst`（旧 storage 全体、9.9G → 3.5G）
