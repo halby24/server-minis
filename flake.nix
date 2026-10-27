@@ -15,7 +15,7 @@
   };
 
   outputs =
-    { nixpkgs, sops-nix, disko, ... }:
+    { self, nixpkgs, sops-nix, disko, ... }:
     {
       packages.x86_64-linux = {
         magic-packet-bridge =
@@ -24,6 +24,11 @@
       };
 
       nixosConfigurations = {
+        # リカバリ / USB インストール用 ISO
+        minis-installer = nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit self disko; };
+          modules = [ ./hosts/installer ];
+        };
         # 実機: AZW MINI S / Intel N100 / x86_64
         minis = nixpkgs.lib.nixosSystem {
           modules = [

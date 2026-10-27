@@ -295,6 +295,34 @@ Windows クライアントから `sftp:restic@minis:/mnt/data_ssd/restic` に re
 - リポジトリは `/mnt/data_ssd/restic`（disko は触らない）。SFTP は sshd の既定サブシステム。
 - 復元・確認は restic のパスワードが別途必要（Windows 側で管理）。
 
+## リカバリ / インストーラ ISO (minis-installer)
+
+flake に `nixosConfigurations.minis-installer` を追加してある。リポジトリと disko CLI を
+焼き込んだ USB インストール / レスキュー用 ISO。
+
+```sh
+nix build .#nixosConfigurations.minis-installer.config.system.build.isoImage
+ls result/iso/*.iso        # 約 1.5G
+```
+
+同梱物:
+
+- `/etc/minis-repo` に**このリポジトリ全体**（sops の秘密は暗号化済みなので同梱可）
+- `disko` CLI（`nixos-anywhere` 無しでも USB 単体でフォーマット可能）
+- root の SSH 鍵（`keys/halby.pub`）と sshd
+- `git` / `restic` / `rsync` / `zstd`
+
+USB からのインストール例（インストーラ上で）:
+
+```sh
+cd /etc/minis-repo
+disko --mode destroy,format,mount --flake .#minis
+nixos-install --flake .#minis --root /mnt
+```
+
+> 既存システムの上に再インストールする場合は、`/etc/ssh/ssh_host_*` を退避しておき
+> `/mnt/etc/ssh/` に戻すこと（sops の復号鍵を維持するため）。
+
 ## ディスク構成 (disko)
 
 `hosts/minis/disk.nix` で宣言。`nixos-anywhere` は disko モジュールを検出して自動で実行する。
