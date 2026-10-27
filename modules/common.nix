@@ -57,7 +57,10 @@
     extraGroups = [ "wheel" ];
     shell = pkgs.zsh;
     hashedPasswordFile = config.sops.secrets.halby_password.path;
-    openssh.authorizedKeys.keyFiles = [ ../keys/halby.pub ];
+    openssh.authorizedKeys.keyFiles = [
+      ../keys/halby.pub
+      ../keys/air.pub
+    ];
   };
   programs.zsh.enable = true;
 

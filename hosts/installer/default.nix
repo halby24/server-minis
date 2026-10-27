@@ -26,7 +26,10 @@
   ];
 
   # リモートからインストールできるように root の SSH 鍵を入れる
-  users.users.root.openssh.authorizedKeys.keyFiles = [ ../../keys/halby.pub ];
+  users.users.root.openssh.authorizedKeys.keyFiles = [
+    ../../keys/halby.pub
+    ../../keys/air.pub
+  ];
   services.openssh = {
     enable = true;
     settings.PermitRootLogin = "prohibit-password";
