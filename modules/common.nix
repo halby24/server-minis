@@ -60,6 +60,7 @@
     openssh.authorizedKeys.keyFiles = [
       ../keys/halby.pub
       ../keys/air.pub
+      ../keys/conoha.pub
     ];
   };
   programs.zsh.enable = true;
