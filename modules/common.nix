@@ -61,6 +61,7 @@
       ../keys/halby.pub
       ../keys/air.pub
       ../keys/conoha.pub
+      ../keys/halby-desktop.pub
     ];
   };
   programs.zsh.enable = true;
