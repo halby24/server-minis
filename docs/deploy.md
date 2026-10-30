@@ -89,38 +89,38 @@ sync
 
 ---
 
-## 4. 実行元ホストの準備（conoha の例）
+## 4. 実行元ホストの準備
 
 `nixos-anywhere` は**対象機の外**から実行する（kexec で対象を再起動するため）。
 
-```sh
-# conoha に Nix を入れる（初回のみ）
-ssh conoha 'sh <(curl -L https://nixos.org/nix/install) --daemon'
-ssh conoha 'mkdir -p ~/.config/nix && echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf'
+### 第一候補: halby-desktop（NixOS 26.05 VM）
 
-# リポジトリを同期（秘密を含むので取り扱い注意）
-rsync -a --exclude .git --exclude '*.qcow2' --exclude result \
-  ./ conoha:~/minis/
-```
-
-> 2026-10-25 時点で conoha は Nix 導入済み・`~/minis` 同期済み。
-
-対象機へは **halby ユーザー + sudo** で入れる（nixos-anywhere が sudo を検出して昇格する）。
+`halby-desktop.local:2422` の NixOS 26.05 (x86_64, 24 cores / 31GB / 949G free)。
+カーネルが新しいので**ローカルビルドできる**。2026-10-30 にセットアップ済み。
 
 ```sh
-ssh conoha 'cd ~/minis && nix run github:nix-community/nixos-anywhere -- --help'
+# リポジトリ同期（秘密を含むので取り扱い注意）
+rsync -a -e "ssh -p 2422 -i ~/.ssh/minis.pub -o IdentitiesOnly=yes" \
+  --exclude .git --exclude '*.qcow2' --exclude result ./ halby-desktop.local:minis/
+
+# 事前ビルド（インストールを速くする。任意）
+ssh -p 2422 -i ~/.ssh/minis.pub halby@halby-desktop.local \
+  'cd ~/minis && nix build .#nixosConfigurations.minis.config.system.build.toplevel'
 ```
 
-### conoha の制約（重要）
+halby-desktop から minis へは `halby@192.168.2.130`（LAN）で入れる（鍵は設定済み）。
 
-conoha は Ubuntu 20.04 / kernel 5.4 で、**NixOS 26.05 の closure をローカルビルドできない**
-（`systemd-hwdb` が `Failed to determine if ... points to the root directory` で失敗する）。
+### 代替: conoha
 
-- `nix eval`（評価）は成功するので、`nixos-anywhere` の `--eval-store auto` は使える
-- ビルドは **kexec 後のインストーラ環境（minis, kernel 6.18 / RAM 15G）に任せる** = `--build-on remote`
-- どうしても conoha でビルドしたい場合は、より新しいカーネルのホストに替える
+Ubuntu 20.04 / kernel 5.4 のため **NixOS 26.05 の closure をローカルビルドできない**
+（`systemd-hwdb` が `Failed to determine if ... points to the root directory` で失敗）。
+評価は通るので、`nixos-anywhere` に **`--build-on remote`** を付けて kexec 後の
+インストーラ環境でビルドさせる。2026-10-25 に Nix 導入・`~/minis` 同期済み。
 
----
+### 対象機への接続
+
+どちらのホストも **halby ユーザー + sudo** で minis に入れる
+（nixos-anywhere が sudo を検出して昇格する）。
 
 ## 5. ハードウェア定義の更新
 
@@ -149,18 +149,19 @@ nixos-facter > hardware.json
 ## 6. インストール実行
 
 ```sh
-ssh conoha
+# halby-desktop（推奨・ローカルビルド）
+ssh -p 2422 -i ~/.ssh/minis.pub halby@halby-desktop.local
 cd ~/minis
-
 nix run github:nix-community/nixos-anywhere -- \
   --flake .#minis \
-  --build-on remote \
   --copy-host-keys \
   halby@192.168.2.130
 ```
 
-- `--build-on remote` は conoha のカーネルが古いため必須（§4）。ビルドは kexec 後の
-  インストーラ環境で行われる。
+conoha から実行する場合のみ `--build-on remote` を付ける（§4 の制約）。
+
+- `--build-on remote` は conoha からの実行時のみ（カーネルが古くローカルビルド不可）。
+  halby-desktop からはローカルビルドされる。
 - `--copy-host-keys` は**必須**。sops の age identity（`/etc/ssh/ssh_host_ed25519_key`）を
   引き継がないと、起動後にすべての秘密が復号できなくなる。
 - disko が NVMe を再パーティション（ESP 1G / swap 8G / root 残り）し、`/mnt/data_ssd` には触らない。
