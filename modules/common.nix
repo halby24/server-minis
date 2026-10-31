@@ -32,6 +32,11 @@
       "flakes"
     ];
     auto-optimise-store = true;
+    # halby-desktop などから nixos-rebuild --target-host で未署名パスをコピーできるように
+    trusted-users = [
+      "root"
+      "halby"
+    ];
   };
 
   nix.gc = {
