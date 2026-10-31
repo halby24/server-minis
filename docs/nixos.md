@@ -51,7 +51,7 @@ secrets/vm/*.yaml         # VM テスト用 (ダミー)
 | Nix 2.35.4 multi-user install (`nix-daemon` 稼働) | `/nix`, `nix-daemon.service` |
 | flakes 有効化 | `~/.config/nix/nix.conf` (`experimental-features = nix-command flakes`) |
 | `halby` を `kvm` グループに追加 | `/etc/group` |
-| このリポジトリの作業コピー | `~/repos/server/minis` (ローカルから rsync、`.git` は除外) |
+| このリポジトリの作業コピー | `~/minis` (ローカルから rsync、`.git` は除外) |
 
 シェルから使うときは profile を読む:
 
@@ -65,6 +65,28 @@ nix --version   # nix (Nix) 2.35.4
 ```sh
 nix flake check
 nix build .#nixosConfigurations.minis.config.system.build.toplevel --dry-run
+```
+
+### web ビルド環境 (devShell / app)
+
+tomarigi_hp_svelte のビルド・デプロイで使うツールは `lib/build-tools.nix` が正本。
+Discord Bot の systemd `path`、`nix develop`、`nix run .#web` の 3 経路が同じ一式を参照する
+(片方だけ古くなってビルドが落ちるドリフトを防ぐため)。
+
+phan が要求する `ast` 拡張は既定の `php83` に入っていないので、
+`php83.withExtensions` で足した PHP を渡している。
+
+```sh
+# 対話シェル (node / pnpm / php+ast / composer / rsync / ssh が入る)
+cd ~/minis && nix develop
+cd ~/ci/tomarigi_hp_svelte && pnpm --filter web run build-dev
+
+# チェックアウトへ入って pnpm script を実行する薄いラッパー
+cd ~/minis && nix run .#web -- build-dev
+nix run .#web -- deploy-dev          # REPO_DIR で対象チェックアウトを差し替え可
+
+# 確認
+nix develop ~/minis -c bash -c 'php -m | grep -x ast'
 ```
 
 ## VM で動作確認
@@ -274,13 +296,17 @@ tomarigi_hp_svelte の Web デプロイ BOT。旧環境は devcontainer 風イ�
   `buildNpmPackage` でビルドする。
 - 対象リポジトリのチェックアウト (`~/ci/tomarigi_hp_svelte`) を作業ディレクトリにして
   `pnpm --filter web <command>` を実行する。チェックアウトと node_modules は stateful。
-- PATH に nodejs_22 / pnpm / php83 / composer / rsync / openssh / git / imagemagick などを渡す
-  (旧イメージに同梱していたツール一式)。
+- PATH には `lib/build-tools.nix` のツール一式 (nodejs_22 / pnpm / php83+ast / composer /
+  rsync / openssh / git / imagemagick など) を渡す。旧イメージに同梱していたものと同じで、
+  devShell / `nix run .#web` とも共通。
 - BOT_TOKEN は sops (`secrets/minis/discord-bot.yaml`) から
   `/run/secrets/rendered/discord-bot.env` を生成して `EnvironmentFile` で渡す。
 - ログは `<repo>/logs` と `<repo>/packages/discord-bot/logs`。旧 clean-logs コンテナの代わりに
   systemd-tmpfiles で 30 日より古いファイルを削除。
-- デプロイ用の SSH 鍵は halby の `~/.ssh` を使う（deploy.sh はホスト実行時そのユーザーの鍵を使う設計）。
+- デプロイ用の SSH 鍵 / `config` / `known_hosts` は sops (`secrets/minis/ssh.yaml`) から
+  `~/.ssh` に配る (sops-nix が `/run/secrets/*` への symlink を作る)。旧 compose は
+  リポジトリの `.ssh` を `/home/node/.ssh` にマウントしていたが、平文の鍵をチェックアウトに
+  置かないよう移した。deploy.sh は実行ユーザーの `~/.ssh` を使う設計なのでそのまま動く。
 
 VM で確認済み (2026-10-25): サービスが起動し、ダミートークンで `TokenInvalid` になるところまで
 （パッケージ・env ファイル・作業ディレクトリの配線確認）。Discord 接続と実デプロイは実機デプロイ後。

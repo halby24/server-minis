@@ -16,11 +16,40 @@
 
   outputs =
     { self, nixpkgs, sops-nix, disko, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      # web ビルド用ツール一式。systemd の PATH と devShell / app で共有する。
+      buildTools = import ./lib/build-tools.nix { inherit pkgs; };
+    in
     {
-      packages.x86_64-linux = {
+      packages.${system} = {
         magic-packet-bridge =
-          nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/magic-packet-bridge { };
-        discord-bot = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/discord-bot { };
+          pkgs.callPackage ./pkgs/magic-packet-bridge { };
+        discord-bot = pkgs.callPackage ./pkgs/discord-bot { };
+      };
+
+      # tomarigi_hp_svelte のビルド環境。
+      #   nix develop ~/minis
+      #   nix run    ~/minis#web -- build-dev
+      devShells.${system}.default = pkgs.mkShell {
+        packages = buildTools.packages;
+        shellHook = buildTools.shellHook;
+      };
+
+      # チェックアウトへ入って pnpm script を叩くだけの薄いラッパー。
+      # REPO_DIR で対象チェックアウトを差し替えられる。
+      apps.${system}.web = {
+        type = "app";
+        program = "${pkgs.writeShellApplication {
+          name = "web";
+          runtimeInputs = buildTools.packages;
+          text = ''
+            cd "''${REPO_DIR:-$HOME/ci/tomarigi_hp_svelte}"
+            exec pnpm --filter web run "$@"
+          '';
+        }}/bin/web";
+        meta.description = "tomarigi_hp_svelte の web ワークスペースで pnpm script を実行する";
       };
 
       nixosConfigurations = {

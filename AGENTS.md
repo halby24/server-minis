@@ -16,6 +16,22 @@
 
 `docs/current-state.md` に 2026-10-24 時点の minis の実構成（ハード、ネットワーク、Docker サービス、データ配置、バックアップ、移行論点）を記録している。作業前に一読すること。
 
+## よく使うコマンド
+
+```sh
+# 反映 (minis 上)
+sudo nixos-rebuild switch --flake ~/minis#minis
+
+# web (tomarigi_hp_svelte) のビルド環境。ツール一式は lib/build-tools.nix が正本
+cd ~/minis && nix develop                 # node / pnpm / php+ast / composer / rsync / ssh
+cd ~/minis && nix run .#web -- build-dev  # チェックアウトに入って pnpm script を実行
+```
+
+- 秘密情報は必ず sops (`secrets/`)。平文の鍵やトークンをチェックアウトに置かない。
+  編集は `sops secrets/minis/<name>.yaml` (この Mac の age 鍵 `~/.config/sops/age/keys.txt` を使う)。
+- `~/minis` はこのリポジトリの同期コピー。`.git` は含めない (`rsync -a --exclude='.git/'`)。
+  ローカルの `~/repos/server/minis` を編集 → rsync → rebuild。
+
 ## ドキュメント
 
 - `docs/nixos.md` — flake 構成、モジュール、VM での確認方法

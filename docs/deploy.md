@@ -232,18 +232,21 @@ sudo systemctl start syncthing
 ## 8. デプロイ BOT の復元
 
 ```sh
-# チェックアウト（鍵は退避した ~/.ssh とリポジトリ内 .ssh を使う）
+# チェックアウト（デプロイ鍵は sops から ~/.ssh に配られるので退避データは不要）
 git clone git@github.com:TomarigiTei/tomarigi_hp_svelte.git ~/ci/tomarigi_hp_svelte
 cd ~/ci/tomarigi_hp_svelte
 pnpm install --frozen-lockfile
 
-# .env / .ssh を退避データから戻す
+# .env を退避データから戻す
 rsync -a /mnt/data_ssd/migration-backup/home/ci/tomarigi_hp_svelte/ ~/ci/tomarigi_hp_svelte/ \
-  --exclude node_modules --exclude .git
+  --exclude node_modules --exclude .git --exclude .ssh
 
 sudo systemctl restart discord-bot
 journalctl -u discord-bot -f      # "Logged in as ..." を確認
 ```
+
+> 2026-10-31 以降、デプロイ鍵 / `config` / `known_hosts` は `secrets/minis/ssh.yaml` (sops) から
+> `~/.ssh` に配られる。チェックアウト内の `.ssh` は使わない。
 
 ---
 

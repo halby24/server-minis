@@ -8,17 +8,45 @@
 let
   bot = pkgs.callPackage ../pkgs/discord-bot { };
   repoDir = "/home/halby/ci/tomarigi_hp_svelte";
-
-  # packages/web の test:php は phan で、既定の php83 には無い ast 拡張を要求する
-  # (無いと "The php-ast extension must be loaded" でビルドが止まる)。
-  # 旧 Docker イメージでは pecl で、旧 Ubuntu では mise の setup:php で入れていた。
-  php = pkgs.php83.withExtensions ({ enabled, all }: enabled ++ [ all.ast ]);
+  # devShell / app と同じツール一式 (lib/build-tools.nix が正本)
+  tools = import ../lib/build-tools.nix { inherit pkgs; };
 in
 {
-  sops.secrets.discord_bot_token = {
-    key = "token";
-    sopsFile = ../secrets/minis/discord-bot.yaml;
-    mode = "0400";
+  sops.secrets = {
+    discord_bot_token = {
+      key = "token";
+      sopsFile = ../secrets/minis/discord-bot.yaml;
+      mode = "0400";
+    };
+
+    # ビルド時の画像取得 (tasks/copy-images) と deploy.sh は ~/.ssh の
+    # config / 鍵 / known_hosts を使って gg へ ssh する。
+    # 旧 compose ではリポジトリの .ssh を /home/node/.ssh にマウントしていたが、
+    # 平文の鍵をチェックアウトに置かないよう sops から配る。
+    ssh_id_ed25519 = {
+      key = "id_ed25519";
+      sopsFile = ../secrets/minis/ssh.yaml;
+      path = "/home/halby/.ssh/id_ed25519";
+      owner = "halby";
+      group = "users";
+      mode = "0400";
+    };
+    ssh_config = {
+      key = "config";
+      sopsFile = ../secrets/minis/ssh.yaml;
+      path = "/home/halby/.ssh/config";
+      owner = "halby";
+      group = "users";
+      mode = "0400";
+    };
+    ssh_known_hosts = {
+      key = "known_hosts";
+      sopsFile = ../secrets/minis/ssh.yaml;
+      path = "/home/halby/.ssh/known_hosts";
+      owner = "halby";
+      group = "users";
+      mode = "0644";
+    };
   };
 
   sops.templates."discord-bot.env" = {
@@ -33,23 +61,8 @@ in
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
 
-    # web の build / deploy スクリプトが使うツール一式
-    path = with pkgs; [
-      nodejs_22
-      pnpm
-      php
-      php83.packages.composer
-      rsync
-      openssh
-      git
-      imagemagick
-      bash
-      coreutils
-      findutils
-      gnutar
-      gzip
-      which
-    ];
+    # web の build / deploy スクリプトが使うツール一式 (devShell と共通)
+    path = tools.packages;
 
     environment = {
       HOME = "/home/halby";
@@ -68,12 +81,8 @@ in
   };
 
   systemd.tmpfiles.rules = [
-    # ビルド時の画像取得 (tasks/copy-images) とデプロイは、チェックアウト内の
-    # .ssh (config / 鍵 / known_hosts) を使って gg へ ssh する。
-    # 旧 compose では .ssh を /home/node/.ssh にマウントして HOME 経由で拾わせていたので、
-    # その関係を ~/.ssh の symlink で再現する。
-    "d ${repoDir}/.ssh 0700 halby users -"
-    "L+ /home/halby/.ssh - - - - ${repoDir}/.ssh"
+    # sops が鍵を書き込む先。ssh クライアント設定の慣例どおり 0700 にしておく。
+    "d /home/halby/.ssh 0700 halby users -"
 
     # 旧 clean-logs コンテナの代替 (1か月より古いログを削除)
     "e ${repoDir}/logs - - - 30d"
