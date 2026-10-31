@@ -315,3 +315,20 @@ journalctl -u discord-bot -f      # "Logged in as ..." を確認
 退避物: `/mnt/data_ssd/migration-backup/`
 - `gitea-bundles/`（2 リポジトリ、complete history）
 - `storage-2026-10-26.tar.zst`（旧 storage 全体、9.9G → 3.5G）
+
+---
+
+## 付録: 実施記録 (2026-10-31)
+
+- 実行元: halby-desktop（NixOS 26.05 VM）から `nixos-anywhere --copy-host-keys`
+- 途中、kexec 後の DHCP で IP が `192.168.2.130` → `192.168.2.197` に変わり、
+  一度目は接続先不一致で停止。インストーラを特定して `root@192.168.2.197` に対して再実行
+- インストール完了・再起動。ホスト鍵は引き継がれ（`SHA256:uVHIF6...`）、sops 復号 OK
+- 事後修正:
+  - misskey の `default.yml` はコンテナ（非 root）から読めるよう `mode = "0444"`
+  - cloudflared の ingress が `http://web:3002` のため `/etc/hosts` に `127.0.0.1 web`
+  - Syncthing のフォルダパスを `/mnt/data_ssd/syncthing/...` に修正
+  - デプロイ BOT を退避データから復元し `pnpm install` → ログイン確認
+- 確認: misskey 公開 200 / samba / cockpit 200 / syncthing 200 / BOT ログイン /
+  failed unit なし
+- 残: `tailscale up`（認証待ち）

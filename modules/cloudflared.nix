@@ -18,6 +18,11 @@
     mode = "0400";
   };
 
+  # ダッシュボード側の ingress が `http://web:3002` を指しているため、
+  # ネイティブの cloudflared から解決できるようにする。
+  # (ダッシュボードを http://localhost:3002 に変えればこの行は不要)
+  networking.extraHosts = "127.0.0.1 web";
+
   systemd.services.cloudflared-misskey = {
     description = "Cloudflare Tunnel for misskey";
     wantedBy = [ "multi-user.target" ];

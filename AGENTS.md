@@ -4,9 +4,13 @@
 
 自宅サーバーのMINIS (`ssh minis`)　を宣言的に管理する
 
-## 移行
+## 移行状況
 
-移行前の段階ではUbuntuで素朴に管理されているため、宣言的管理に移行したい
+**2026-10-31 に NixOS 26.05 へ移行済み**。設定はこのリポジトリが正本。
+
+- 反映: リポジトリを minis に同期して `sudo nixos-rebuild switch --flake ~/minis#minis`
+  （または halby-desktop から `nixos-rebuild switch --target-host`）
+- 旧 Ubuntu 時代の棚卸しは `docs/current-state.md`（履歴として保持）
 
 ## 現状の棚卸し
 
@@ -20,10 +24,9 @@
 
 ## アーキテクチャ
 
-随時追加
-
-- NixOS
-- Podman
+- NixOS 26.05 (flake) / disko / sops-nix
+- Podman（docker-compose 互換ソケット経由）
+- データディスク `/mnt/data_ssd`（btrfs、disko 対象外）
 
 ## テスト環境
 

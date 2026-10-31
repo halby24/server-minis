@@ -14,7 +14,8 @@ in
   sops.secrets.misskey_default_yml = {
     sopsFile = ../secrets/minis/misskey-default.yml;
     format = "binary";
-    mode = "0400";
+    # コンテナ内の非 root ユーザーから読めるようにする (bind mount されるため)
+    mode = "0444";
   };
 
   environment.etc."misskey/compose.yml".text = ''
