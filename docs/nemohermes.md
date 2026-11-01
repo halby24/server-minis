@@ -1,124 +1,124 @@
 # NemoHermes (NVIDIA NemoClaw)
 
-minis 上で NVIDIA NemoClaw の Hermes エージェント（`nemohermes`）を常駐させるための記録。
-2026-11-01 時点で **CLI までの導入が完了し、サンドボックスは未作成**（推論プロバイダ未決定）。
+minis 上で NVIDIA NemoClaw の Hermes エージェントを常駐させ、推論に **OpenCode Go** を使う構成。
+2026-11-01 にインストールし、サンドボックス `hermes` が稼働している。
 
-- 本体は upstream の installer がユーザー単位で入れる。NixOS 側は前提だけを宣言する。
-- NixOS は NemoClaw の検証対象外（Ubuntu 24.04 が主対象）。以下のつまずきは NixOS 固有。
+| 項目 | 値 |
+| --- | --- |
+| NemoHermes CLI | v0.0.140 (`~/.local/bin/nemohermes`) |
+| OpenShell | 0.0.116（gateway は systemd --user で常駐） |
+| サンドボックス | `hermes`（rootless Podman, CPU only） |
+| Hermes Agent | v0.21.3（NemoClaw のイメージ固定値） |
+| 推論 | `compatible-endpoint` / `deepseek-v4.1-flash`（OpenCode Go） |
+| dashboard / API | `127.0.0.1:18789` / `127.0.0.1:8642`（loopback のみ） |
 
 ## 構成
 
-| 場所 | 中身 |
-| --- | --- |
-| `~/.local/bin/` | `nemohermes` / `nemoclaw` / `nemo-deepagents` の shim、`openshell`、`openshell-gateway` |
-| `~/.npm-global/` | CLI の npm link 先（`nemohermes` = `nemoclaw` の alias） |
-| `~/.nemoclaw/source/` | installer が clone した NemoClaw のソース（ビルド済み `dist/` を含む） |
-| `~/.config/systemd/user/nemoclaw-openshell-gateway.service` | OpenShell gateway（onboarding で enable される） |
-| `~/.zshrc` | installer が `~/.local/bin` の PATH 設定を追記する |
-| サンドボックス | rootless Podman（`NEMOCLAW_GATEWAY_RUNTIME=podman`） |
-
-ポートは dashboard `18789`、OpenAI 互換 API `8642`。どちらも **loopback バインド**なので
-firewall は開けない。外から見るなら `ssh -L 18789:127.0.0.1:18789 minis`。
-
-## NixOS 側の前提 (`modules/nemohermes.nix`)
-
-```nix
-environment.systemPackages = [ nodejs_22 binutils lsof ];  # installer の preflight 用
-users.users.halby.linger = true;                            # systemd --user を常駐させる
-system.activationScripts.binbash.text = "ln -sfn ${pkgs.bashInteractive}/bin/bash /bin/bash";
-environment.sessionVariables.NEMOCLAW_GATEWAY_PORT = "8080";
-programs.nix-ld.enable = true;                              # npm 製 ELF (prek 等) 用
+```mermaid
+flowchart TD
+    H["Hermes sandbox<br/>hermes 0.21.3"] -->|"inference.local /<br/>host.openshell.internal:8000"| G["OpenShell gateway<br/>:8080 (systemd --user)"]
+    G --> P["nginx :8000<br/>x-opencode-session 付与<br/>UA 固定"]
+    P --> O["opencode.ai<br/>/inference/go/openai/v1"]
 ```
 
-それぞれの理由:
+OpenCode Go は `x-opencode-session` ヘッダが無いリクエストを 400 で拒否し、
+汎用 UA（`python-urllib` など）を Cloudflare 1010 で弾く。NemoClaw の検証プローブにも
+サンドボックスの Hermes 0.21.3 にもその対応が無いため、**nginx で補う**。
+nginx は認証ヘッダを素通しするだけで、API キーは保持しない。
 
-1. **Node.js は nvm ではなく nixpkgs。** installer は Node が無いと nvm で入れるが、
-   nvm の Node は汎用 Linux 向け glibc バイナリで NixOS では動かない。`nodejs_22`
-   (22.23.4 / npm 10.9.9) を入れておけば installer は nvm をスキップする。
-   `strings` (binutils) と `lsof` は preflight が PATH 上で要求する。
-2. **`/bin/bash` を足す。** `bin/nemoclaw.js` が gateway port の解決に
-   `spawnSync("/bin/bash", …)` をハードコードしている。NixOS の `/bin` には `sh` しか無い。
-3. **`NEMOCLAW_GATEWAY_PORT=8080` を固定する。** 未設定だと CLI は
-   `PATH=/usr/bin:/bin` で自分の resolver を呼ぶが、NixOS の `/usr/bin` には
-   `dirname` すら無いため必ず失敗し
-   `Could not safely resolve the automatically selected NemoClaw gateway port` で落ちる。
-   8080 は自動選択時の既定値と同じ。8080 が埋まったら 8990–9005 の自動選択は使えないので、
-   そのときは別ポートを明示する。
-4. **nix-ld。** `npm link` が走らせる `prek` などは汎用 Linux 向け動的リンク ELF。
-   無効だと `NixOS cannot run dynamically linked executables` で失敗する（リンク自体は
-   通ることもあるが、その後のツールが動かない）。
-5. **linger。** onboarding が enable する `nemoclaw-openshell-gateway.service` を
-   ログアウト後・再起動後も動かすため。
+## NixOS 側 (`modules/nemohermes.nix`)
+
+| 設定 | 理由 |
+| --- | --- |
+| `nodejs_22` / `binutils` / `lsof` | installer の preflight（Node >= 22.19, npm >= 10, `strings`, `lsof`） |
+| `users.users.halby.linger = true` | `nemoclaw-openshell-gateway.service` をログアウト後も動かす |
+| `/bin/bash` symlink | `bin/nemoclaw.js` が gateway port 解決に `spawnSync("/bin/bash")` |
+| `/bin/ps` symlink | OpenShell の forward 所有権確認が `/bin/ps` 固定 |
+| `/bin/sleep` symlink | 同様にハードコードされている |
+| `/usr/bin/lsof` symlink | forward 監視が `/usr/bin/lsof -ti4TCP:<port>` 固定。無いと forward が必ず失敗する |
+| `NEMOCLAW_GATEWAY_PORT=8080` | 未設定だと `PATH=/usr/bin:/bin` で resolver を呼び、NixOS では `dirname` が無く失敗 |
+| `programs.nix-ld` | npm 製の汎用 ELF（prek 等）を動かす |
+| `~/.local/bin/podman` shim | Podman アダプタが `podman` の realpath の親を検査し、`/nix/store` (1775) を拒否するため |
+| `services.nginx` :8000 | OpenCode Go 用のヘッダ注入（上記） |
+| `networking.firewall.allowedTCPPorts = [ 8000 ]` | nginx 側で 127.0.0.1 / 10/8 / 172.16/12 / 169.254/16 のみ許可、LAN・tailnet は拒否 |
 
 ## インストール（実行済み）
 
-同意が必要なので、対話で notice を確認したうえで非対話実行した。
-
 ```sh
-export NEMOCLAW_AGENT=hermes \
-       NEMOCLAW_GATEWAY_RUNTIME=podman \
-       NEMOCLAW_DEFER_ONBOARDING=1 \
-       NEMOCLAW_PROVIDER=build \
-       NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
-       NEMOCLAW_DISABLE_TELEMETRY=1 \
-       NEMOCLAW_GATEWAY_PORT=8080
+# 1. CLI と OpenShell（onboarding は後回し）
+export NEMOCLAW_AGENT=hermes NEMOCLAW_GATEWAY_RUNTIME=podman \
+       NEMOCLAW_DEFER_ONBOARDING=1 NEMOCLAW_PROVIDER=build \
+       NEMOCLAW_DISABLE_TELEMETRY=1 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
+
+# 2. サンドボックス作成（キーは 1Password から stdin で渡す）
+op read "op://Personal/<item-id>/credential" | ssh minis 'read -r COMPATIBLE_API_KEY
+  export COMPATIBLE_API_KEY PATH="$HOME/.local/bin:$PATH"
+  export NEMOCLAW_GATEWAY_RUNTIME=podman NEMOCLAW_PROVIDER=custom \
+         NEMOCLAW_ENDPOINT_URL=http://127.0.0.1:8000/v1 \
+         NEMOCLAW_MODEL=deepseek-v4.1-flash NEMOCLAW_SANDBOX_NAME=hermes \
+         NEMOCLAW_WEB_SEARCH_PROVIDER=none NEMOCLAW_DISABLE_TELEMETRY=1 \
+         NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1
+  nemohermes onboard --non-interactive </dev/null'
 ```
 
-- `--defer-onboarding` は「推論プロバイダ未決定のまま CLI だけ入れる」指定。
-  サンドボックスもプロバイダも作られない。この指定は NVIDIA ホスト推論
-  (`build` / `cloud` / `routed`) のときだけ許されるので `NEMOCLAW_PROVIDER=build` を添える
-  （値は記録されない）。
-- テレメトリは既定で NVIDIA の TEST 受信先へ送られる。`NEMOCLAW_DISABLE_TELEMETRY=1` で無効化。
-- 結果: `nemohermes v0.0.140` / `openshell 0.0.116`。installer のログは
-  `~/nemoclaw-install-*.log`。
+`--defer-onboarding` は「プロバイダ未決定のまま CLI だけ入れる」指定で、
+NVIDIA ホスト推論しか許さないため `NEMOCLAW_PROVIDER=build` を添える（値は記録されない）。
+onboarding のログは `~/nemoclaw-onboard-*.log`。
 
-## 次の手順（サンドボックス作成）
+## キー管理
 
-プロバイダを決めてから、minis 上で:
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-NEMOCLAW_GATEWAY_RUNTIME=podman nemohermes onboard
-```
-
-- 既定サンドボックス名は `hermes`。OpenClaw と並べるときは別名にする。
-- サンドボックスイメージは約 2.4GB（展開時はもう少し）。`/` の空きは 400GB 以上ある。
-- rootless Podman の前提は満たしている（`/run/user/1000/podman/podman.sock` 0660、
-  cgroups v2、netavark + DNS、subuid/subgid 設定済み）。`NEMOCLAW_GATEWAY_RUNTIME=podman`
-  を付け忘れると Docker を入れに行く（NixOS では失敗する）。
-- onboarding 後に確認するもの:
-
-```sh
-nemohermes list
-nemohermes hermes status
-nemohermes hermes doctor
-ssh -L 18789:127.0.0.1:18789 minis   # dashboard
-```
+- **正本は 1Password**（項目: `OpenCode Go (NemoHermes)` / API Credential）。
+  minis には置かない。実体は OpenShell gateway の provider store にだけ入る。
+- 受け渡しは `op read ... | ssh minis 'read -r COMPATIBLE_API_KEY'` のように **stdin**。
+  コマンドライン引数・シェル履歴・ファイルに残さない。
+- ローテーション: Console で新キー発行 → 1Password 更新 →
+  `nemohermes credentials reset <provider> --yes` → 再 onboarding（または `credentials add`）→ 旧キー失効。
+- OpenCode Go の利用上限は **workspace 単位**。NemoClaw が消費する分も同じ枠に入る。
 
 ## 運用
 
 ```sh
-nemohermes status                 # 全体（sandbox 一覧 + host サービス）
+export PATH="$HOME/.local/bin:$PATH"
+
+nemohermes list                  # サンドボックス一覧
+nemohermes hermes status
+nemohermes hermes doctor         # 総合ヘルスチェック
 nemohermes hermes logs --follow
-nemohermes hermes recover         # 再起動後に forward が死んだとき
-nemohermes hermes dashboard-url
+nemohermes hermes recover        # 再起動後に forward を復旧
+nemohermes inference set --model <model> --provider custom --sandbox hermes
 ```
 
-アンインストールは `nemohermes uninstall`（Portable Ollama 等の後始末込み）。
-`~/.nemoclaw` と `~/.local/bin` の shim は手で消す。
+- dashboard: `ssh -L 18789:127.0.0.1:18789 minis` → `http://127.0.0.1:18789/`
+- API: `ssh -L 8642:127.0.0.1:8642 minis` → `http://127.0.0.1:8642/v1`
+  - トークンは `nemohermes hermes gateway-token --quiet`
+- **再起動後**: gateway とサンドボックスは自動で戻るが、host forward（18789/8642）は
+  detached プロセスなので `nemohermes hermes recover` で張り直す。
+- アンインストール: `nemohermes uninstall`。`~/.nemoclaw` と `~/.local/bin` の shim は手で消す。
 
-## 注意点
+## つまずいた点（再発防止）
 
-- **rsync で `.git` ファイルを運ばない。** `vps/minis/target` をそのまま送ると
-  submodule の `.git`（`gitdir: ../../.git/modules/vps/minis`）までコピーされ、
-  `nixos-rebuild --flake ~/minis#minis` が
-  `failed to resolve path '/home/halby/minis/../../.git/modules/vps/minis'` で落ちる。
-  `rsync -a --exclude='.git' ./ minis:minis/` のように **ディレクトリだけでなくファイルも**
-  除外する。
-- installer を再実行すると `~/.nemoclaw/source` を作り直す。CLI のバージョンは
-  upstream の `lkg` タグに追従する。
-- `nemohermes` は `~/.local/bin` にしか無い。非対話シェルでは PATH に入らないので、
-  自動化では絶対パスか `export PATH="$HOME/.local/bin:$PATH"` を使う。
-- 起動時の `ExperimentalWarning: SQLite is an experimental feature` は Node 22 の
-  警告で、動作に影響しない。
+1. **rsync で `.git` ファイルを運ばない。** submodule の `.git`（`gitdir: ../../.git/modules/...`）を
+   コピーすると `nixos-rebuild --flake ~/minis#minis` が
+   `failed to resolve path .../.git/modules/vps/minis` で落ちる。`--exclude='.git'`（ディレクトリだけでなくファイルも）。
+2. **NixOS に無いハードコードパス**: `/bin/bash`, `/bin/ps`, `/bin/sleep`, `/usr/bin/lsof`。
+   症状は「gateway port が解決できない」「forward が必ず cleanup_uncertain で失敗」。
+3. **Podman executable authority**: `/nix/store` が group writable なため、システムの podman を
+   そのまま使えない。`~/.local/bin/podman` の shim で realpath をストア外へ。
+4. **OpenCode Go の 400 `MissingSessionID`**: 全リクエストに `x-opencode-session` が必要。
+   NemoClaw の検証プローブにはヘッダ追加手段が無い（`getProbeExtraHeaders` は OpenRouter 専用）。
+5. **Cloudflare 1010**: `python-urllib` などの汎用 UA は 403。nginx で UA を固定する。
+6. **forward は ssh の known_hosts を使う** ことがある。初回だけ手動で
+   `openshell forward start <port> hermes` を流すと host key が入る（今回の環境では
+   最終的に `/usr/bin/lsof` が原因だった）。
+7. 起動時の `ExperimentalWarning: SQLite is an experimental feature` は Node 22 の警告で無害。
+
+## 既知の制約
+
+- サンドボックスの Hermes は **0.21.3** 固定。OpenCode Go が validated としているのは
+  **0.21.6+**（`x-opencode-session` を自分で送る版）。現在は nginx が補っているため動作するが、
+  NemoClaw が Hermes を更新したら proxy の必要性を再確認する。
+- OpenCode Go のセッション ID は proxy で固定値（`ses_nemohermes_minis`）。
+  会話ごとの routing/caching 最適化は効かない。Hermes 側がヘッダを送る版になれば
+  その値が優先される（nginx の `map` でパススルー）。
+- サンドボックスは CPU のみ。ローカル推論はしない前提。
