@@ -13,7 +13,7 @@
 { pkgs, ... }:
 {
   # 現行 Ubuntu では ufw が無効だったため、ここで初めて明示的な制限をかける。
-  # ポートは 2026-10-24 時点で残すサービスに合わせている (docs/current-state.md 参照)。
+  # ポートは残すサービスに合わせて明示している (各モジュールも参照)。
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [

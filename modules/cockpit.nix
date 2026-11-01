@@ -2,7 +2,8 @@
 # Cockpit 本体 + cockpit-podman プラグイン (podman ソケット経由で操作)。
 #
 # 注意: Cockpit のログインは PAM (Unix パスワード) なので、halby に
-# Unix パスワードが無いとログインできない。実機では `sudo passwd halby` で設定する。
+# Unix パスワードが無いとログインできない。users.mutableUsers = false のため
+# `passwd` ではなく secrets/minis/users.yaml のハッシュを更新する (docs/nixos.md)。
 { pkgs, ... }:
 {
   services.cockpit = {

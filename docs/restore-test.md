@@ -1,13 +1,11 @@
 # restic 復元テスト手順
 
-バックアップは「戻せて初めてバックアップ」。実機移行の前に、リポジトリから実際に
-ファイルを復元できることを確認する。
+バックアップは「戻せて初めてバックアップ」。定期的にリポジトリから実際にファイルを
+復元できることを確認する。
 
 - リポジトリ: `sftp:restic@minis:/mnt/data_ssd/restic`
 - 実行場所: **HALBY-DESKTOP (Windows)**（restic のパスワードがそこにあるため）
-- リポジトリの中身: HALBY-DESKTOP のバックアップ（minis のデータではない）
-
----
+- このリポジトリの中身は **HALBY-DESKTOP のバックアップ**（minis のデータではない）
 
 ## 1. スナップショットの確認
 
@@ -16,23 +14,14 @@ $env:RESTIC_REPOSITORY = "sftp:restic@minis:/mnt/data_ssd/restic"
 restic snapshots
 ```
 
-- 最新のスナップショット ID と日時を控える
-- パス（`Paths`）が期待どおりか確認
+最新のスナップショット ID と日時、`Paths` が期待どおりかを確認する。
 
 ## 2. 整合性チェック
 
 ```powershell
-restic check
+restic check                    # 構造と参照（数分）
+restic check --read-data-subset=5%   # データを実際に読む（231G 超なので数分〜十数分）
 ```
-
-構造と参照のチェック（数分）。次にデータの一部を実際に読むチェック:
-
-```powershell
-restic check --read-data-subset=5%
-```
-
-- 5% でも数分〜十数分かかることがある（231G 超のリポジトリ）
-- 余裕があれば `--read-data-subset=10%` など
 
 ## 3. 統計の確認
 
@@ -42,30 +31,28 @@ restic stats latest
 
 ファイル数・合計サイズが想定どおりか。
 
-## 4. 部分復元（まず小さく）
+## 4. 部分復元
+
+いきなり全部復元しない（時間・容量）。
 
 ```powershell
-restic ls latest | Select-Object -First 30     # パスを確認
+restic ls latest | Select-Object -First 30     # パス表記の確認
 restic restore latest --target D:\restic-restore-test --include "/C/Users/halby/Documents"
 ```
 
-- いきなり全部復元しない（時間・容量）
-- `--include` はスナップショット内のパス表記に合わせる（`restic ls` で確認）
+`--include` はスナップショット内のパス表記に合わせる。
 
 ## 5. 復元結果の検証
 
 ```powershell
 Get-ChildItem D:\restic-restore-test -Recurse -File |
   Measure-Object -Property Length -Sum
-```
-
-- 元データのファイル数・合計サイズと比較
-- いくつかファイルを開いて壊れていないか確認
-- 可能ならハッシュ比較:
-
-```powershell
 Get-FileHash D:\restic-restore-test\...\somefile.txt
 ```
+
+- 元データのファイル数・合計サイズと比較する
+- いくつかファイルを開いて壊れていないか確認する
+- ハッシュが取れるものは元と比較する
 
 ## 6. 後片付け
 
@@ -73,59 +60,31 @@ Get-FileHash D:\restic-restore-test\...\somefile.txt
 Remove-Item -Recurse -Force D:\restic-restore-test
 ```
 
----
-
-## 判定基準
-
-- [x] `restic snapshots` で最新スナップショットが見える（2026-10-26 に 20 件を確認）
-- [x] `restic check` が exit 0（2026-10-26 実施、エラーなし）
-- [ ] `restic check --read-data-subset=5%` が exit 0（任意。時間があれば）
-- [x] 復元したファイルが開ける（2026-10-26 Windows で実施、成功）
-- [x] ファイル数・サイズ（またはハッシュ）が元と一致（同上）
-
-### 実施記録
-
-| 日付 | 内容 | 結果 |
-| --- | --- | --- |
-| 2026-10-26 | `restic snapshots` | 20 件（6/7: 2, 10/25: 6, 10/26: 12） |
-| 2026-10-26 | `restic check`（構造・参照） | エラーなし |
-| 2026-10-26 | 復元テスト（Windows） | 成功 |
-| 任意 | `restic check --read-data-subset=5%` | データ内容の実読チェック（未実施でも可） |
-| 2026-10-26 | 中断アップロードの残骸 `*-restic-temp-*` が 14 個 | 未参照（check に影響なし）。整理可 |
-
 ## 失敗したとき
 
 1. エラーメッセージを記録（`restic check` の出力）
 2. `restic rebuild-index` を試す
-3. 破損がある場合（restic 0.17+）:
-   - `restic repair index`
-   - `restic repair snapshots`
-   - `restic repair packs`
+3. 破損がある場合（restic 0.17+）: `restic repair index` → `repair snapshots` → `repair packs`
 4. 直近のスナップショットで同じ検証をやり直す
-
----
 
 ## 重要な注意
 
-### リポジトリが同一ディスク上にある
+### リポジトリがバックアップ対象と同じディスク上にある
 
 `/mnt/data_ssd/restic` はバックアップ対象と同じ物理ディスク (SATA SSD) 上にある。
-**ディスクが壊れるとバックアップも一緒に失う**。offsite コピーを作ること。
+**ディスクが壊れるとバックアップも一緒に失う。** offsite コピーを作ること。
 
 ```powershell
-# 例: 外付け HDD (D:) に複製
+restic init --repo2 D:\restic-offsite          # 初回のみ
 $env:RESTIC_PASSWORD2 = "<オフサイト側のパスワード>"
 restic copy --repo2 D:\restic-offsite
 ```
 
-（`restic init --repo2 ...` で複製先を初期化してから `restic copy`）
-
 ### minis のデータはこのリポジトリに含まれない
 
-このリポジトリは Windows PC のバックアップ。minis 側の
-`/mnt/data_ssd`（syncthing 421G、misskey DB 12G）は別途バックアップが必要。
+このリポジトリは Windows PC のバックアップ。minis 側の `/mnt/data_ssd`
+（syncthing・misskey DB など）は別途バックアップが必要。
 
-移行時は disko が NVMe だけを消すのでデータディスクは残るが、
-「消さない」ことと「バックアップがある」ことは別問題。余裕があれば
-`/mnt/data_ssd` の重要部分（misskey DB / syncthing の設定）を
-外付けディスクへコピーしておく。
+再インストールで disko が消すのは NVMe だけでデータディスクは残るが、
+「消さない」ことと「バックアップがある」ことは別問題。重要部分（misskey DB /
+syncthing の設定）は外付けディスクへコピーしておく。
