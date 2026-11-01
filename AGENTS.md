@@ -39,6 +39,7 @@ nix flake check
 ## ドキュメント
 
 - `docs/nixos.md` — 構成、モジュール、ビルド環境、ディスク、sops、VM 確認、再インストール
+- `docs/nemohermes.md` — NVIDIA NemoClaw (nemohermes) の導入と NixOS 固有の注意点
 - `docs/restore-test.md` — restic の復元テスト手順と offsite コピーの注意
 - conoha の OS 再インストール: `my-all-servers` の `vps/conoha/docs/install.md`
 

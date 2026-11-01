@@ -10,7 +10,7 @@ flake.nix                 # nixosConfigurations: minis / minis-vm / minis-test /
                           #   minis-installer / conoha / conoha-installer
 modules/common.nix        # 実機・VM 共通（server / secrets / samba / cockpit /
                           #   syncthing / cloudflared / misskey / magic-packet-bridge /
-                          #   discord-bot / restic を import）
+                          #   discord-bot / restic / nemohermes を import）
 modules/server.nix        # firewall / tailscale / podman / journald
 modules/secrets.nix       # sops-nix (age)
 hosts/minis/default.nix   # 実機のホスト設定

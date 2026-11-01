@@ -18,6 +18,7 @@
     ./magic-packet-bridge.nix
     ./discord-bot.nix
     ./restic.nix
+    ./nemohermes.nix
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";

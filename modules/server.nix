@@ -5,6 +5,7 @@
 #   - tgt (iSCSI ターゲット, 3260): ターゲット定義なし。使うなら services.tgt を別途追加する
 #   - gitea (8000/2226): リポジトリ 2 件のみで移行しない
 #   - openclaw (18789/18790): 移行しない
+#     (18789 は現在 NemoHermes dashboard が loopback で使う。docs/nemohermes.md)
 #   - vsftpd (21): 廃止 (平文 FTP。SMB / Syncthing で代替)
 #   - portainer (9000): Cockpit + cockpit-podman に置き換え (modules/cockpit.nix)
 #
