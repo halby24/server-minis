@@ -1,8 +1,9 @@
-# MINIS Server 管理用
+# サーバー管理用 (minis / conoha)
 
 ## 概要
 
-自宅サーバーのMINIS (`ssh minis`)　を宣言的に管理する
+自宅サーバーの MINIS (`ssh minis`) と ConoHa VPS の conoha (`ssh conoha`) を
+宣言的に管理する。
 
 ## 移行状況
 
@@ -36,6 +37,7 @@ cd ~/minis && nix run .#web -- build-dev  # チェックアウトに入って pn
 
 - `docs/nixos.md` — flake 構成、モジュール、VM での確認方法
 - `docs/deploy.md` — 実機投入（Ubuntu → NixOS）の手順書・チェックリスト・ロールバック
+- `docs/conoha-migration.md` — ConoHa VPS (conoha) の棚卸しと NixOS 移行手順
 - `docs/restore-test.md` — restic の復元テスト手順と offsite コピーの注意
 
 ## アーキテクチャ

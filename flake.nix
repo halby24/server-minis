@@ -1,5 +1,5 @@
 {
-  description = "minis (自宅サーバー) の NixOS 構成";
+  description = "minis (自宅サーバー) と conoha (ConoHa VPS) の NixOS 構成";
 
   inputs = {
     # 26.05 が現行の stable。unstable を使う場合はここを差し替える。
@@ -65,6 +65,15 @@
             disko.nixosModules.disko
             ./modules/common.nix
             ./hosts/minis
+          ];
+        };
+
+        # ConoHa VPS 3.0 (旧 Ubuntu 20.04)。Caddy / MediaMTX / Mailpit
+        conoha = nixpkgs.lib.nixosSystem {
+          modules = [
+            sops-nix.nixosModules.sops
+            disko.nixosModules.disko
+            ./hosts/conoha
           ];
         };
 

@@ -3,6 +3,8 @@ keys:
   - &minis age1lytk9qynst8c0ganxrt68vvmsf9h93l9nfueh85t2razr7ksdeaqv9j6xc
   # 編集用: この Mac の age 鍵 (~/.config/sops/age/keys.txt)
   - &halby age12sue5pfycfj4lf4rpwy6khyawq27tzdm63cl4gf5k0wk8dlw93zsp4lkmj
+  # ConoHa VPS: 既存の SSH ホスト鍵 (/etc/ssh/ssh_host_ed25519_key) から ssh-to-age で導出
+  - &conoha age1m473wdmfhjks84lgzgpw04jt34gmz23qsajy3zhf90a3ww2sc5tqzxvzdd
   # VM テスト専用 (hosts/vm/test_age.key, リポジトリに公開されているダミー用)
   - &vm age1ef88xxcpe0lmyaavxzr8rj8j8sw6xmp4wm4m2gkyt30clt5htsysyyatyy
 
@@ -16,3 +18,8 @@ creation_rules:
     key_groups:
       - age:
           - *vm
+  - path_regex: secrets/conoha/.*\.ya?ml$
+    key_groups:
+      - age:
+          - *conoha
+          - *halby

@@ -1,0 +1,99 @@
+# MediaMTX 設定 (2026-10-31 の稼働中設定から、既定値の羅列を落として整理)。
+#
+# 認証は送信元 IP ベース:
+#   - Tailscale (100.64.0.0/10) から publish 可
+#   - 全世界から read / playback 可
+#   - localhost から API / metrics / pprof 可
+
+logLevel: info
+logDestinations: [stdout]
+
+authMethod: internal
+authInternalUsers:
+  # OBS publisher via Tailscale (Tailscale = 信頼境界)
+  - user: any
+    pass:
+    ips: ['100.64.0.0/10']
+    permissions:
+      - action: publish
+
+  # Public viewers (RTSP / HLS) - 全世界無認証
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+      - action: playback
+
+  # Localhost admin
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
+api: no
+metrics: no
+pprof: no
+playback: no
+
+# RTSP
+rtsp: yes
+rtspTransports: [udp, multicast, tcp]
+rtspEncryption: "no"
+rtspAddress: :8554
+rtpAddress: :8000
+rtcpAddress: :8001
+multicastIPRange: 224.1.0.0/16
+multicastRTPPort: 8002
+multicastRTCPPort: 8003
+
+# RTMP
+rtmp: yes
+rtmpEncryption: "no"
+rtmpAddress: :1935
+
+# HLS (Caddy が 127.0.0.1:18080 へ reverse_proxy する)
+hls: yes
+hlsAddress: :18080
+hlsEncryption: no
+hlsAllowOrigins: ['*']
+hlsAlwaysRemux: yes
+hlsVariant: mpegts
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsDirectory: ''
+hlsMuxerCloseAfter: 60s
+
+# WebRTC
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigins: ['*']
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ''
+webrtcIPsFromInterfaces: yes
+webrtcIPsFromInterfacesList: []
+webrtcAdditionalHosts: []
+webrtcHandshakeTimeout: 10s
+webrtcTrackGatherTimeout: 2s
+webrtcSTUNGatherTimeout: 5s
+
+# SRT
+srt: yes
+srtAddress: :8890
+
+pathDefaults:
+  source: publisher
+  sourceOnDemand: no
+  maxReaders: 0
+  record: no
+  # 同じパスに別の publisher が来たら奪い取る (旧設定と同じ)
+  overridePublisher: yes
+
+paths:
+  all_others:
