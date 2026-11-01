@@ -1,9 +1,9 @@
 # conoha (ConoHa VPS) の棚卸しと NixOS 移行
 
-2026-10-31 時点で稼働中の Ubuntu 20.04 を NixOS 26.05 に置き換えるための記録。
-設定の正本は `hosts/conoha/`。
+2026-11-01 に Ubuntu 20.04 から NixOS 26.05 へ移行した。設定の正本は `hosts/conoha/`。
+このドキュメントは実際の手順と、ハマった点の記録。
 
-## 1. 現行構成 (Ubuntu 20.04.6 / kernel 5.4)
+## 1. 旧構成 (Ubuntu 20.04.6 / kernel 5.4)
 
 | 項目 | 内容 |
 | --- | --- |
@@ -12,147 +12,172 @@
 | スペック | Intel Xeon (Icelake) 1 vCPU / RAM 461MiB / swap 2G |
 | ディスク | `/dev/vda` 30G（BIOS boot 3M + ext4 `/`） |
 | ブート | BIOS (GRUB)。EFI パーティション無し |
-| ネットワーク | eth0: IPv4 は DHCP（固定 IP が返る）、IPv6 は静的 + デフォルトルート |
+| ネットワーク | eth0: **IPv4 は静的**（`160.251.180.206/23`, GW `160.251.180.1`）、IPv6 も静的。**DHCP は無い** |
 
 ### 稼働サービス
 
 | サービス | 実体 | ポート |
 | --- | --- | --- |
-| Caddy 2.11.4 | `/usr/local/bin/caddy` + `/etc/caddy/caddy.json` | 80, 443, 8443, 8888 |
-| MediaMTX 1.11.3 | `~/.local/bin/mediamtx` + `~/.config/mediamtx/mediamtx.yml` | 8554/tcp, 8000-8001/udp, 1935/tcp, 18080/tcp, 8889/tcp, 8189/udp, 8890/tcp |
-| Mailpit | Docker `axllent/mailpit:latest` + compose | 8025/tcp, 587→1025/tcp |
+| Caddy 2.11.4 | `/etc/caddy/caddy.json` | 80, 443, 8443, 8888 |
+| MediaMTX 1.11.3 | systemd (ユーザー halby) | 8554/tcp, 8000-8001/udp, 1935/tcp, 18080/tcp, 8889/tcp, 8189/udp, 8890/tcp |
+| Mailpit | Docker `axllent/mailpit:latest` | 8025/tcp, 587→1025/tcp |
 | Tailscale | `tailscaled` | 41641/udp |
-| fail2ban | sshd jail (maxretry 5 / bantime 24h) | - |
+| fail2ban | sshd jail | - |
 | ufw | 22, 25, 80, 443, 554, 8554, 8000-8001/udp, 8888, 8443, 1935(tailscale0), 587(219.94.129.236 と tailnet) | - |
-
-- Caddy は `media.halby24.com` を `127.0.0.1:18080`（MediaMTX の HLS）へ reverse proxy。
-  証明書は Cloudflare DNS-01（`/etc/caddy/caddy_token.env` の `CF_API_TOKEN`）。
-- MediaMTX の認証は IP ベース。publish は Tailscale のみ、read は全世界、admin は localhost。
-- Mailpit の SMTP は 587 で、Docker の `DOCKER-USER` チェーンで送信元を制限していた。
-- Docker は Mailpit の 1 コンテナだけ（hello-world のゴミ 1 個あり）。
 
 ### 移行対象のデータ
 
-| データ | 場所 | 移行 |
+| データ | 旧場所 | 新場所 |
 | --- | --- | --- |
-| Mailpit DB | `/home/halby/servers/mailpit/mailpit/mailpit.db` (108K) | 新 `/var/lib/mailpit/mailpit.db` へコピー |
-| Tailscale state | `/var/lib/tailscale/tailscaled.state` ほか (92K) | 新 `/var/lib/tailscale/` へコピー（IP 維持） |
-| SSH ホスト鍵 | `/etc/ssh/ssh_host_*` | `nixos-anywhere --copy-host-keys` で引き継ぎ |
-| Mediamtx 設定 | `~/.config/mediamtx/mediamtx.yml` | `hosts/conoha/mediamtx.yml` に反映済み（秘密なし） |
-| Caddy 設定 | `/etc/caddy/{Caddyfile,caddy.json}` | `hosts/conoha/caddy.nix` に移植 |
+| Mailpit DB | `/home/halby/servers/mailpit/mailpit/mailpit.db` (108K) | `/var/lib/mailpit/mailpit.db` |
+| Tailscale state | `/var/lib/tailscale/` (92K) | `/var/lib/tailscale/` |
+| SSH ホスト鍵 | `/etc/ssh/ssh_host_*` | `/etc/ssh/`（`nixos-install` 前に復元） |
+| Caddy 設定 | `/etc/caddy/*` | `hosts/conoha/caddy.nix` |
 | Cloudflare token | `/etc/caddy/caddy_token.env` | `secrets/conoha/cloudflare.yaml` |
 | Mailpit SMTP AUTH | compose の環境変数 | `secrets/conoha/mailpit.yaml` |
 | halby パスワード | `/etc/shadow` | `secrets/conoha/users.yaml` |
 
-Caddy の証明書（`/var/lib/caddy`）は移行しない。NixOS 側で lego が再取得する。
+Caddy の証明書は移行せず、NixOS 側の `security.acme` で再取得した。
 
-## 2. NixOS 側の設計
+## 2. なぜ nixos-anywhere ではなく ISO か
 
-| 旧 | 新 |
-| --- | --- |
-| Ubuntu + ufw | NixOS + nftables (`networking.firewall`) |
-| Caddy 自前 DNS-01 (plugin) | `security.acme` (lego) + Caddy が証明書ファイルを読む |
-| Docker Mailpit + iptables | `services.mailpit` + nftables |
-| ntpd | systemd-timesyncd（NixOS 既定） |
-| cloud-init / netplan | systemd-networkd（MAC で match、IPv4 DHCP + IPv6 静的） |
-| swapfile 2G | `swapDevices` で 2G の swapfile |
+nixos-anywhere は kexec に **RAM 1.5GB 以上**（swap 除く）を要求する。
+この VPS は 512MB プランで、前払いプランのため API からのプラン変更も不可
+（コントロールパネルでも上位プランへ変更できないことを確認済み）。
 
-- Caddy は plugin 入りビルドを避けるため、ACME を NixOS に任せる。
-- Mailpit は `DynamicUser` を無効化し、静的ユーザー `mailpit` で `/var/lib/mailpit` を使う。
-- MediaMTX は nixpkgs の 1.18.x に上がる（設定は互換な範囲に整理）。
-- ファイアウォールは旧 ufw の許可ポートを踏襲。587 と 1935 は送信元で制限。
+そのため、**ConoHa の ISO レスキューモード**で NixOS インストーラ ISO を起動し、
+`nixos-install --system` でインストールした。
 
-## 3. 移行手順
+## 3. インストーラ ISO
 
-### 3.1 事前バックアップ
-
-ConoHa コントロールパネルでブートボリュームのバックアップ（またはスナップショット）を取る。
-これがロールバックの唯一の確実な手段。
-
-作業マシン（minis など）にデータを退避する。
+`hosts/conoha-installer/` が ISO の定義。対象システムの closure を ISO の Nix store に
+焼き込むので、インストール時にネットワークからのダウンロード・評価が不要。
 
 ```sh
-mkdir -p ~/conoha-backup
-rsync -a --rsync-path="sudo rsync" conoha:/var/lib/tailscale/ ~/conoha-backup/tailscale/
-rsync -a --rsync-path="sudo rsync" conoha:/home/halby/servers/mailpit/mailpit/ ~/conoha-backup/mailpit/
-ssh conoha 'sudo tar -C /etc/ssh -cf - ssh_host_ed25519_key ssh_host_ed25519_key.pub' \
-  | tar -C ~/conoha-backup -xf -
+nix build .#nixosConfigurations.conoha-installer.config.system.build.isoImage
+# → result/iso/nixos-*.iso（約 1.8GB）
 ```
 
-### 3.2 ビルド確認
+ISO には `conoha-install` スクリプトが入っている。やること:
+
+1. `/dev/vda` を GPT で再作成（3M bios_grub + ext4 root）
+2. 2G の一時 swap を作成
+3. `nixos-install --root /mnt --system <closure> --no-root-password`
+4. `/root/conoha-data` があれば SSH ホスト鍵と Tailscale state を復元
+
+### アップロードとレスキュー起動
+
+ISO は Image API に直接 PUT する（**1.8GB を `-T` でストリーム送信**。
+`--data-binary` はメモリ不足になる）。作成時に
+`hw_rescue_bus=ide`, `hw_rescue_device=cdrom` を指定する。
 
 ```sh
-cd ~/minis   # このリポジトリを同期したもの
-nix build .#nixosConfigurations.conoha.config.system.build.toplevel
+# 1) イメージ作成
+curl -X POST -H "X-Auth-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"conoha-nixos-installer","disk_format":"iso","hw_rescue_bus":"ide","hw_rescue_device":"cdrom","container_format":"bare"}' \
+  https://image-service.c3j1.conoha.io/v2/images
+# 2) アップロード
+curl -X PUT -H "X-Auth-Token: $TOKEN" -H 'Content-Type: application/octet-stream' \
+  -T nixos-*.iso https://image-service.c3j1.conoha.io/v2/images/$IMG/file
+# 3) レスキューモードで起動
+curl -X POST -H "X-Auth-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"rescue":{"rescue_image_ref":"'$IMG'"}}' \
+  https://compute.c3j1.conoha.io/v2.1/servers/$SID/action
 ```
 
-### 3.3 nixos-anywhere
+### レスキュー環境のネットワーク
 
-対象機の外（minis か halby-desktop）から実行する。conoha は RAM が 512MB しかないので
-`--build-on remote` は使わない（kexec 後のインストーラ上でビルドすると OOM しやすい）。
+**ConoHa は DHCP を提供しない。** ISO 起動後は ens3 に IP が無いので、
+既知の静的 IP を手で設定する（NetworkManager が邪魔をするので止める）。
 
 ```sh
-nix run github:nix-community/nixos-anywhere -- \
-  --flake .#conoha \
-  --copy-host-keys \
-  halby@160.251.180.206
+sudo systemctl stop NetworkManager
+sudo ip addr add 160.251.180.206/23 dev ens3
+sudo ip route add 160.251.180.0/23 dev ens3
+sudo ip route add default via 160.251.180.1
 ```
 
-- `--copy-host-keys` は必須。SSH ホスト鍵 = sops の age identity。
-- disko が `/dev/vda` を再パーティションする（3M bios_grub + ext4 root）。
-- kexec が通らない場合は ConoHa の ISO マウントで NixOS インストーラを起動し、
-  `disko --mode destroy,format,mount --flake .#conoha` → `nixos-install` に切り替える。
+これで `ssh root@160.251.180.206` が通る（ISO の root 鍵は `keys/halby.pub` と `keys/air.pub`）。
 
-### 3.4 初回起動後のデータ戻し
+## 4. インストール手順（実施済み）
 
 ```sh
-ssh conoha
+# Mac から退避データを ISO 環境へ
+ssh root@160.251.180.206 'mkdir -p /root/conoha-data/tailscale /root/conoha-data/mailpit'
+scp ~/conoha-backup-*/ssh/ssh_host_* root@160.251.180.206:/root/conoha-data/
+scp -r ~/conoha-backup-*/tailscale/. root@160.251.180.206:/root/conoha-data/tailscale/
+scp -r ~/conoha-backup-*/mailpit/. root@160.251.180.206:/root/conoha-data/mailpit/
 
-# Tailscale（IP 100.86.106.81 を維持する）
-sudo systemctl stop tailscaled
-sudo install -d -m 700 -o root -g root /var/lib/tailscale
-sudo install -m 600 -o root -g root ~/tailscaled.state /var/lib/tailscale/tailscaled.state
-sudo systemctl start tailscaled
-tailscale status
+# ISO 上でインストール（バックグラウンドでログを取る）
+ssh root@160.251.180.206 'nohup conoha-install > /root/install.log 2>&1 &'
+# INSTALL_OK を待つ
 
-# Mailpit（初回起動で /var/lib/mailpit が作られてから）
-sudo systemctl stop mailpit-default
-sudo install -m 600 -o mailpit -g mailpit mailpit.db /var/lib/mailpit/mailpit.db
-sudo systemctl start mailpit-default
+# レスキュー解除
+curl -X POST ... -d '{"unrescue":null}' .../action
 ```
 
-### 3.5 確認
+## 5. ハマった点（重要）
+
+### 5.1 パーティションラベル
+
+disko を使う設定では、インストール後の initrd が
+`/dev/disk/by-partlabel/disk-main-root` を探す。手動パーティションで
+`root` というラベルにすると **emergency mode** になる。
+
+`conoha-install` は `sgdisk -c 2:disk-main-root`（と 1 は `disk-main-bios`）を付ける。
+既にインストール済みでラベルが違う場合は `parted /dev/vda` の
+`name 2 disk-main-root` で直せる。
+
+### 5.2 systemd-networkd が有効にならない
+
+`networking.useNetworkd = true` だけでは **サービスが enable されない**。
+`systemd.network.enable = true` も必要。これが無いと IP が付かず SSH も上がらない。
+
+```nix
+networking.useNetworkd = true;
+systemd.network.enable = true;
+```
+
+### 5.3 IPv4 は DHCP ではない
+
+`networking.useDHCP` や `DHCP=ipv4` では IP が付かない。`hosts/conoha/default.nix` の
+`systemd.network.networks."10-wan"` で静的アドレス・ゲートウェイを設定している。
+
+### 5.4 swap の置き場所
+
+`swapDevices` に `/var/swap/swapfile` を指定すると、初回起動時に
+`/var/swap` が無くて `mkswap` が失敗する。`/swapfile` に置くこと。
+
+### 5.5 Caddy の証明書
+
+Caddy の plugin ビルドを避けるため、証明書は `security.acme`（lego, Cloudflare DNS-01）が
+取得し、Caddy は `/var/lib/acme/media.halby24.com/{cert,key}.pem` を読む。
+`security.acme.certs.<domain>.group = "caddy"` と `reloadServices = [ "caddy" ]` を設定。
+
+## 6. 移行後の確認
 
 ```sh
-# 証明書
-sudo systemctl status 'acme-media.halby24.com.service'
-curl -I https://media.halby24.com/
-
-# MediaMTX
-ss -tulpn | grep -E '8554|1935|8889|8890|18080'
-
-# Mailpit (SMTP)
-nix shell nixpkgs#swaks --command swaks --server 127.0.0.1:587 --auth tomarigi:<password> --to test@example.com
-
-# fail2ban
-sudo fail2ban-client status sshd
+ssh conoha 'systemctl --failed; swapon --show; tailscale status | head -1'
+curl -I https://media.halby24.com/        # TLS と 404 (MediaMTX HLS) が返る
+ssh conoha 'ss -ltn | grep -E ":(22|80|443|587|8554|8888|8443)"'
 ```
 
-## 4. ロールバック
+- Tailscale は state を復元したので IP は `100.86.106.81` のまま。
+- SSH ホスト鍵も復元済み（フィンガープリント不変）なので sops が復号できる。
+- Mailpit の DB は起動後に `/var/lib/mailpit/mailpit.db` へコピーし、
+  `chown mailpit:mailpit` して `mailpit-default` を再起動する。
+
+## 7. ロールバック
 
 1. ConoHa コントロールパネルでブートボリュームをバックアップから復元
 2. サーバーを起動
-3. もし Tailscale の state を上書きしていれば、退避した `tailscaled.state` を戻す
+3. 必要なら退避した Tailscale state を戻す
 
-## 5. 既知の注意点
+## 8. 既知の注意点
 
 - **RAM 512MB。** Nix のビルドを conoha 上で行うと OOM しやすい。ビルドは minis /
-  halby-desktop で行い、conoha は `--build-on remote` のビルド先にしない。
-- MediaMTX は 1.11 → 1.18 に上がる。設定は互換な範囲に整理したが、初回に
-  `journalctl -u mediamtx` で警告を確認する。
-- Caddy の証明書は再取得になる。Cloudflare token に DNS:Edit 権限が必要。
-- `default` セキュリティグループの ingress は同一 SG 内のみ。公開ポートは
-  `RTSP` SG の 554/8554/8888 と Caddy の 80/443/8443。
-- 公開 SSH (22) は引き続き開く。fail2ban と鍵認証のみ。
-- conoha のホスト名は `conoha`。Tailscale の ACL は IP `100.86.106.81` を前提にしているので、
-  state を移して IP を維持する。
+  halby-desktop で行い、closure を `nix copy` する。
+- MediaMTX は 1.11 → 1.18 に上がった。設定は互換な範囲に整理済み。
+- Caddy の証明書は NixOS 側で再取得。Cloudflare token に DNS:Edit 権限が必要。
+- 公開 SSH (22) は開いている。fail2ban と鍵認証のみ。
+- ConoHa の API プラン変更は前払いプランでは不可。ISO を使うこと。

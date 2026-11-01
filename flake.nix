@@ -77,6 +77,12 @@
           ];
         };
 
+        # conoha を ISO (レスキューモード) から入れるためのインストーラ
+        conoha-installer = nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit self; };
+          modules = [ ./hosts/conoha-installer ];
+        };
+
         # 動作確認用 VM。minis 上 (KVM) で動かす想定。
         # ディスクは qemu-vm が用意するので disko は使わない。
         minis-vm = nixpkgs.lib.nixosSystem {
