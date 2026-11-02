@@ -7,8 +7,9 @@
 # に入る。ここではその前提だけを宣言的に用意する。
 #
 # サンドボックスは rootless Podman で動かす (Docker は使わない)。
-# ports: 18789 dashboard / 8642 OpenAI 互換 API。どちらも loopback バインドなので
-#        firewall は開けない。外から見るなら ssh -L で転送する。
+# ports: 18789 dashboard / 8642 OpenAI 互換 API。どちらも loopback バインド。
+#        dashboard は Tailscale Serve + nginx (:18790) 経由で tailnet にだけ公開する。
+#        API (8642) は tailnet に出さず ssh -L で転送する。
 {
   pkgs,
   ...
@@ -75,6 +76,10 @@
         ""      "ses_nemohermes_minis";
         default $http_x_opencode_session;
       }
+      map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+      }
     '';
     virtualHosts."nemohermes-opencode" = {
       listen = [
@@ -125,6 +130,56 @@
           proxy_read_timeout 300s;
         '';
       };
+    };
+  };
+
+  # 18789 の dashboard は Host: 127.0.0.1:18789 以外を 400 で拒否する。
+  # Tailscale Serve (tailnet の https://minis.tail54a7c.ts.net/) は Host を
+  # そのまま流すため、L7 で Host を書き換える一段を挟む。
+  #
+  #   tailscale serve (443) -> 127.0.0.1:18790 (nginx) -> 127.0.0.1:18789
+  services.nginx.virtualHosts."nemohermes-tailnet" = {
+    listen = [
+      {
+        addr = "127.0.0.1";
+        port = 18790;
+      }
+    ];
+    serverName = "nemohermes-tailnet";
+    locations."/" = {
+      proxyPass = "http://127.0.0.1:18789";
+      extraConfig = ''
+        # tailscale serve は tailscaled から 127.0.0.1 で来る
+        allow 127.0.0.1;
+        deny all;
+        proxy_http_version 1.1;
+        proxy_set_header Host 127.0.0.1:18789;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+      '';
+    };
+  };
+
+  # Tailscale Serve の設定を起動時に張り直す（tailscaled の状態にも残るが宣言的に揃える）
+  systemd.services.nemohermes-tailscale-serve = {
+    description = "Expose the NemoHermes dashboard on the tailnet via Tailscale Serve";
+    after = [
+      "tailscaled.service"
+      "network-online.target"
+    ];
+    requires = [ "tailscaled.service" ];
+    wants = [ "network-online.target" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.tailscale}/bin/tailscale serve --bg 18790";
+      ExecStop = "${pkgs.tailscale}/bin/tailscale serve --https=443 off";
     };
   };
 

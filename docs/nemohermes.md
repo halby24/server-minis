@@ -10,7 +10,7 @@ minis 上で NVIDIA NemoClaw の Hermes エージェントを常駐させ、推�
 | サンドボックス | `hermes`（rootless Podman, CPU only） |
 | Hermes Agent | v0.21.3（NemoClaw のイメージ固定値） |
 | 推論 | `compatible-endpoint` / `deepseek-v4.1-flash`（OpenCode Go） |
-| dashboard / API | `127.0.0.1:18789` / `127.0.0.1:8642`（loopback のみ） |
+| dashboard / API | `127.0.0.1:18789` / `127.0.0.1:8642`（loopback）+ `https://minis.tail54a7c.ts.net/`（tailnet, air のみ） |
 
 ## 構成
 
@@ -19,12 +19,18 @@ flowchart TD
     H["Hermes sandbox<br/>hermes 0.21.3"] -->|"inference.local /<br/>host.openshell.internal:8000"| G["OpenShell gateway<br/>:8080 (systemd --user)"]
     G --> P["nginx :8000<br/>x-opencode-session 付与<br/>UA 固定"]
     P --> O["opencode.ai<br/>/inference/go/openai/v1"]
+    C["air の Hermes.app<br/>https://minis.tail54a7c.ts.net"] --> T["tailscale serve<br/>443"]
+    T --> N["nginx 127.0.0.1:18790<br/>Host 書換 + WS"]
+    N --> D["dashboard 127.0.0.1:18789"]
 ```
 
 OpenCode Go は `x-opencode-session` ヘッダが無いリクエストを 400 で拒否し、
 汎用 UA（`python-urllib` など）を Cloudflare 1010 で弾く。NemoClaw の検証プローブにも
 サンドボックスの Hermes 0.21.3 にもその対応が無いため、**nginx で補う**。
 nginx は認証ヘッダを素通しするだけで、API キーは保持しない。
+
+dashboard 側は Host ヘッダを検証しており、`Host: 127.0.0.1:18789` 以外は 400 になる。
+`tailscale serve` は Host をそのまま流すので、間に Host を書き換える nginx を挟んでいる。
 
 ## NixOS 側 (`modules/nemohermes.nix`)
 
@@ -40,6 +46,8 @@ nginx は認証ヘッダを素通しするだけで、API キーは保持しな�
 | `programs.nix-ld` | npm 製の汎用 ELF（prek 等）を動かす |
 | `~/.local/bin/podman` shim | Podman アダプタが `podman` の realpath の親を検査し、`/nix/store` (1775) を拒否するため |
 | `services.nginx` :8000 | OpenCode Go 用のヘッダ注入（上記） |
+| `services.nginx` :18790 | tailnet 用 dashboard プロキシ（Host を `127.0.0.1:18789` に書換 + WS） |
+| `nemohermes-tailscale-serve.service` | 起動時に `tailscale serve --bg 18790`（443 → 18790）を適用 |
 | `networking.firewall.allowedTCPPorts = [ 8000 ]` | nginx 側で 127.0.0.1 / 10/8 / 172.16/12 / 169.254/16 のみ許可、LAN・tailnet は拒否 |
 
 ## インストール（実行済み）
@@ -89,9 +97,22 @@ nemohermes hermes recover        # 再起動後に forward を復旧
 nemohermes inference set --model <model> --provider custom --sandbox hermes
 ```
 
-- dashboard: `ssh -L 18789:127.0.0.1:18789 minis` → `http://127.0.0.1:18789/`
-- API: `ssh -L 8642:127.0.0.1:8642 minis` → `http://127.0.0.1:8642/v1`
-  - トークンは `nemohermes hermes gateway-token --quiet`
+### tailnet から見る（Hermes.app / ブラウザ）
+
+air からは `https://minis.tail54a7c.ts.net/` で dashboard に入れる（SSH トンネル不要）。
+
+- 経路: `tailscale serve`(443) → nginx `127.0.0.1:18790`（Host 書換 + WS）→ dashboard
+- tailnet ACL: `air → minis tcp:443` を許可（`tailscale/acl.hujson`）
+- Hermes.app: **Add connection → Remote**
+  - URL `https://minis.tail54a7c.ts.net`
+  - Auth `Token` = dashboard HTML の `__HERMES_SESSION_TOKEN__`
+  - 取得: `ssh minis "curl -s http://127.0.0.1:18789/ | sed -n 's/.*__HERMES_SESSION_TOKEN__=\"\([^\"]*\)\".*/\1/p' | head -1"`
+- **トークンは gateway 再起動ごとに変わる**（`.env` に固定すると NemoClaw の
+  secret boundary が `SECRET_BOUNDARY_REFUSED` で拒否する）。変わったら取り直して貼り替え。
+- 443 が届かないときのフォールバック: `ssh -N -L 18789:127.0.0.1:18789 minis`
+  → `http://127.0.0.1:18789/`
+- API は 8642 のままで tailnet 非公開。使うときは `ssh -L 8642:127.0.0.1:8642 minis`
+  → `http://127.0.0.1:8642/v1`（トークンは `nemohermes hermes gateway-token --quiet`）
 - **再起動後**: gateway とサンドボックスは自動で戻るが、host forward（18789/8642）は
   detached プロセスなので `nemohermes hermes recover` で張り直す。
 - アンインストール: `nemohermes uninstall`。`~/.nemoclaw` と `~/.local/bin` の shim は手で消す。
