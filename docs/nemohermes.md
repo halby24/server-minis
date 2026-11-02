@@ -109,8 +109,13 @@ air からは `https://minis.tail54a7c.ts.net/` で dashboard に入れる（SSH
   - 取得: `ssh minis "curl -s http://127.0.0.1:18789/ | sed -n 's/.*__HERMES_SESSION_TOKEN__=\"\([^\"]*\)\".*/\1/p' | head -1"`
 - **dashboard のセッショントークンは sandbox を再起動すると変わる**（`stop`/`start`・
   ホスト再起動）。**`gateway restart` では変わらない**（2026-11-02 実測: PID は変わるが
-  トークンは同一）。変わったら `nh-connect` / 取得コマンドで取り直して貼り替える。
-  `.env` に固定すると NemoClaw の secret boundary が `SECRET_BOUNDARY_REFUSED` で拒否する。
+  トークンは同一）。
+  - air 側は `nh-sandbox-restart` で「stop → start → forward 復旧 → Hermes.app の設定
+    （`connection.json` / `connections.json`）へ新トークン書き込み → アプリ再起動」まで自動。
+  - 手動同期は `nh-sync-token --restart`（`--restart` 無しは書き込みのみ）。
+  - アプリ UI で貼り替える場合、**空欄保存は古いトークンを維持する**ので、変わったら
+    必ず新しい値を入れる。
+  - `.env` に固定すると NemoClaw の secret boundary が `SECRET_BOUNDARY_REFUSED` で拒否する。
 - 443 が届かないときのフォールバック: `ssh -N -L 18789:127.0.0.1:18789 minis`
   → `http://127.0.0.1:18789/`
 - API は 8642 のままで tailnet 非公開。使うときは `ssh -L 8642:127.0.0.1:8642 minis`
