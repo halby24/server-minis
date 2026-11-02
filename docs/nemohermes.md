@@ -107,8 +107,10 @@ air からは `https://minis.tail54a7c.ts.net/` で dashboard に入れる（SSH
   - URL `https://minis.tail54a7c.ts.net`
   - Auth `Token` = dashboard HTML の `__HERMES_SESSION_TOKEN__`
   - 取得: `ssh minis "curl -s http://127.0.0.1:18789/ | sed -n 's/.*__HERMES_SESSION_TOKEN__=\"\([^\"]*\)\".*/\1/p' | head -1"`
-- **トークンは gateway 再起動ごとに変わる**（`.env` に固定すると NemoClaw の
-  secret boundary が `SECRET_BOUNDARY_REFUSED` で拒否する）。変わったら取り直して貼り替え。
+- **dashboard のセッショントークンは sandbox を再起動すると変わる**（`stop`/`start`・
+  ホスト再起動）。**`gateway restart` では変わらない**（2026-11-02 実測: PID は変わるが
+  トークンは同一）。変わったら `nh-connect` / 取得コマンドで取り直して貼り替える。
+  `.env` に固定すると NemoClaw の secret boundary が `SECRET_BOUNDARY_REFUSED` で拒否する。
 - 443 が届かないときのフォールバック: `ssh -N -L 18789:127.0.0.1:18789 minis`
   → `http://127.0.0.1:18789/`
 - API は 8642 のままで tailnet 非公開。使うときは `ssh -L 8642:127.0.0.1:8642 minis`
